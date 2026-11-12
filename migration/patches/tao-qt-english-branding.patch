@@ -1,0 +1,91 @@
+--- a/src/qt/addressbookpage.cpp
++++ b/src/qt/addressbookpage.cpp
+@@ -84,12 +84,12 @@
+     switch(tab)
+     {
+     case SendingTab:
+-        ui->labelExplanation->setText(tr("These are your Bitcoin addresses for sending payments. Always check the amount and the receiving address before sending coins."));
++        ui->labelExplanation->setText(tr("These are your TAO addresses for sending payments. Always check the amount and the receiving address before sending coins."));
+         ui->deleteAddress->setVisible(true);
+         ui->newAddress->setVisible(true);
+         break;
+     case ReceivingTab:
+-        ui->labelExplanation->setText(tr("These are your Bitcoin addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.\nSigning is only possible with addresses of the type 'legacy'."));
++        ui->labelExplanation->setText(tr("These are your TAO addresses for receiving payments. Use the 'Create new receiving address' button in the receive tab to create new addresses.\nSigning is only possible with addresses of the type 'legacy'."));
+         ui->deleteAddress->setVisible(false);
+         ui->newAddress->setVisible(false);
+         break;
+--- a/src/qt/askpassphrasedialog.cpp
++++ b/src/qt/askpassphrasedialog.cpp
+@@ -103,7 +103,7 @@
+         }
+         QMessageBox msgBoxConfirm(QMessageBox::Question,
+                                   tr("Confirm wallet encryption"),
+-                                  tr("Warning: If you encrypt your wallet and lose your passphrase, you will <b>LOSE ALL OF YOUR BITCOINS</b>!") + "<br><br>" + tr("Are you sure you wish to encrypt your wallet?"),
++                                  tr("Warning: If you encrypt your wallet and lose your passphrase, you will <b>LOSE ALL YOUR TAO</b>!") + "<br><br>" + tr("Are you sure you wish to encrypt your wallet?"),
+                                   QMessageBox::Cancel | QMessageBox::Yes, this);
+         msgBoxConfirm.button(QMessageBox::Yes)->setText(tr("Continue"));
+         msgBoxConfirm.button(QMessageBox::Cancel)->setText(tr("Back"));
+@@ -114,7 +114,7 @@
+             if(newpass1 == newpass2)
+             {
+                 QString encryption_reminder = tr("Remember that encrypting your wallet cannot fully protect "
+-                "your bitcoins from being stolen by malware infecting your computer.");
++                "your TAO from being stolen by malware infecting your computer.");
+                 if (m_passphrase_out) {
+                     m_passphrase_out->assign(newpass1);
+                     QMessageBox msgBoxWarning(QMessageBox::Warning,
+--- a/src/qt/guiutil.cpp
++++ b/src/qt/guiutil.cpp
+@@ -135,7 +135,7 @@
+     widget->setFont(fixedPitchFont());
+     // We don't want translators to use own addresses in translations
+     // and this is the only place, where this address is supplied.
+-    widget->setPlaceholderText(QObject::tr("Enter a Bitcoin address (e.g. %1)").arg(
++    widget->setPlaceholderText(QObject::tr("Enter a TAO address (e.g. %1)").arg(
+         QString::fromStdString(DummyAddress(Params()))));
+     widget->setValidator(new BitcoinAddressEntryValidator(parent));
+     widget->setCheckValidator(new BitcoinAddressCheckValidator(parent));
+--- a/src/qt/bitcoinunits.cpp
++++ b/src/qt/bitcoinunits.cpp
+@@ -31,10 +31,10 @@
+ QString BitcoinUnits::longName(Unit unit)
+ {
+     switch (unit) {
+-    case Unit::BTC: return QString("BTC");
+-    case Unit::mBTC: return QString("mBTC");
+-    case Unit::uBTC: return QString::fromUtf8("µBTC (bits)");
+-    case Unit::SAT: return QString("Satoshi (sat)");
++    case Unit::BTC: return QString("TAO");
++    case Unit::mBTC: return QString("mTAO");
++    case Unit::uBTC: return QString::fromUtf8("µTAO");
++    case Unit::SAT: return QString("TAO base unit");
+     } // no default case, so the compiler can warn about missing cases
+     assert(false);
+ }
+@@ -44,8 +44,8 @@
+     switch (unit) {
+     case Unit::BTC: return longName(unit);
+     case Unit::mBTC: return longName(unit);
+-    case Unit::uBTC: return QString("bits");
+-    case Unit::SAT: return QString("sat");
++    case Unit::uBTC: return QString("µTAO");
++    case Unit::SAT: return QString("unit");
+     } // no default case, so the compiler can warn about missing cases
+     assert(false);
+ }
+@@ -53,10 +53,10 @@
+ QString BitcoinUnits::description(Unit unit)
+ {
+     switch (unit) {
+-    case Unit::BTC: return QString("Bitcoins");
+-    case Unit::mBTC: return QString("Milli-Bitcoins (1 / 1" THIN_SP_UTF8 "000)");
+-    case Unit::uBTC: return QString("Micro-Bitcoins (bits) (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+-    case Unit::SAT: return QString("Satoshi (sat) (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
++    case Unit::BTC: return QString("TAO");
++    case Unit::mBTC: return QString("Milli-TAO (1 / 1" THIN_SP_UTF8 "000)");
++    case Unit::uBTC: return QString("Micro-TAO (1 / 1" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
++    case Unit::SAT: return QString("Smallest TAO unit (1 / 100" THIN_SP_UTF8 "000" THIN_SP_UTF8 "000)");
+     } // no default case, so the compiler can warn about missing cases
+     assert(false);
+ }

@@ -1,0 +1,58 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -26,7 +26,7 @@
+ #=============================
+ # Project / Package metadata
+ #=============================
+-set(CLIENT_NAME "Bitcoin Core")
++set(CLIENT_NAME "TAO Revival")
+ set(CLIENT_VERSION_MAJOR 31)
+ set(CLIENT_VERSION_MINOR 1)
+ set(CLIENT_VERSION_BUILD 0)
+--- a/src/qt/guiconstants.h
++++ b/src/qt/guiconstants.h
+@@ -46,13 +46,13 @@
+ /* Number of frames in spinner animation */
+ #define SPINNER_FRAMES 36
+ 
+-#define QAPP_ORG_NAME "Bitcoin"
+-#define QAPP_ORG_DOMAIN "bitcoin.org"
+-#define QAPP_APP_NAME_DEFAULT "Bitcoin-Qt"
+-#define QAPP_APP_NAME_TESTNET "Bitcoin-Qt-testnet"
+-#define QAPP_APP_NAME_TESTNET4 "Bitcoin-Qt-testnet4"
+-#define QAPP_APP_NAME_SIGNET "Bitcoin-Qt-signet"
+-#define QAPP_APP_NAME_REGTEST "Bitcoin-Qt-regtest"
++#define QAPP_ORG_NAME "Xnuva Blockchain Project"
++#define QAPP_ORG_DOMAIN "xnuva.com"
++#define QAPP_APP_NAME_DEFAULT "TAO-Qt"
++#define QAPP_APP_NAME_TESTNET "TAO-Qt-testnet"
++#define QAPP_APP_NAME_TESTNET4 "TAO-Qt-testnet4"
++#define QAPP_APP_NAME_SIGNET "TAO-Qt-signet"
++#define QAPP_APP_NAME_REGTEST "TAO-Qt-regtest"
+ 
+ /* One gigabyte (GB) in bytes */
+ static constexpr uint64_t GB_BYTES{1000000000};
+--- a/src/qt/bitcoin.cpp
++++ b/src/qt/bitcoin.cpp
+@@ -195,7 +195,7 @@
+ }
+ 
+ static int qt_argc = 1;
+-static const char* qt_argv = "bitcoin-qt";
++static const char* qt_argv = "tao-qt";
+ 
+ BitcoinApplication::BitcoinApplication()
+     : QApplication(qt_argc, const_cast<char**>(&qt_argv))
+@@ -538,10 +538,10 @@
+             return EXIT_FAILURE;
+         }
+         if (invalid_token) {
+-            InitError(Untranslated(strprintf("Command line contains unexpected token '%s', see bitcoin-qt -h for a list of options.", argv[i])));
++            InitError(Untranslated(strprintf("Command line contains unexpected token '%s', see tao-qt -h for a list of options.", argv[i])));
+             QMessageBox::critical(nullptr, CLIENT_NAME,
+                                   // message cannot be translated because translations have not been initialized
+-                                  QString::fromStdString("Command line contains unexpected token '%1', see bitcoin-qt -h for a list of options.").arg(QString::fromStdString(argv[i])));
++                                  QString::fromStdString("Command line contains unexpected token '%1', see tao-qt -h for a list of options.").arg(QString::fromStdString(argv[i])));
+             return EXIT_FAILURE;
+         }
+     }

@@ -30,7 +30,9 @@ uint256 CBlockHeader::GetPoWHash() const
     assert(stream.size() == 80);
 
     uint256 out;
-    tao::Scrypt1024_1_1_256(stream.data(), out.data());
+    tao::Scrypt1024_1_1_256(
+        reinterpret_cast<const unsigned char*>(stream.data()),
+        out.data());
     return out;
 }
 

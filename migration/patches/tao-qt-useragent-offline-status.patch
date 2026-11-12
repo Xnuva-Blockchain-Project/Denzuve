@@ -1,0 +1,22 @@
+--- a/src/clientversion.cpp
++++ b/src/clientversion.cpp
+@@ -21,7 +21,7 @@
+  * for both bitcoind and bitcoin-qt, to make it harder for attackers to
+  * target servers or GUI users specifically.
+  */
+-const std::string UA_NAME("Satoshi");
++const std::string UA_NAME("TAO");
+ 
+ 
+ #include <bitcoin-build-info.h>
+--- a/src/qt/bitcoingui.cpp
++++ b/src/qt/bitcoingui.cpp
+@@ -1181,7 +1181,7 @@
+             if (synctype != SyncType::BLOCK_SYNC) {
+                 return;
+             }
+-            progressBarLabel->setText(tr("Connecting to peers…"));
++            progressBarLabel->setText(m_node.getNetworkActive() ? tr("Connecting to peers…") : tr("Network activity disabled."));
+             break;
+     }
+ 

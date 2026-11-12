@@ -26,8 +26,55 @@ if [[ "$actual" != "$EXPECTED_UPSTREAM" ]]; then
 fi
 
 mkdir -p "$DEST"
-cp -a modern-core/. "$DEST"/
+# Keep upstream Git metadata out of the TAO build tree.
+tar -C modern-core --exclude='.git' -cf - . | tar -C "$DEST" -xf -
 cp -a migration/modern-tao-draft/. "$DEST"/
+
+# TAO Checkpoint 31C: mainnet-only startup
+# Apply the tested startup compatibility repair.
+# Refuse fuzzy application against changed upstream code.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-mainnet-only-startup.patch
+
+# TAO Checkpoint 34: preserve Scrypt Proof of Work
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-scrypt-blockstorage.patch
+
+# TAO Checkpoint 39: Scrypt mining nonce validation
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-scrypt-mining.patch
+
+# TAO Checkpoint 45: critical GUI branding
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-qt-english-branding.patch
+
+# TAO Checkpoint 47: application identity
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-qt-app-identity.patch
+
+# TAO Checkpoint 48: approved artwork is retained as reproducible migration assets.
+install -m 0644 migration/assets/tao-revival-icon.png "$DEST/src/qt/res/icons/tao-revival-icon.png"
+install -m 0644 migration/assets/tao-revival-splash.png "$DEST/src/qt/res/icons/tao-revival-splash.png"
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-qt-splash-and-icon.patch
+
+# TAO Checkpoint 48C: wallet support links
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-client-links.patch
+
+# TAO Checkpoint 49A: client identity and offline status
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-qt-useragent-offline-status.patch
+
+# TAO Checkpoint 51A: visible English Qt labels only
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-qt-visible-labels.patch
+
+
+if [[ -e "$DEST/.git" || -L "$DEST/.git" ]]; then
+    echo "STOP: unexpected Git metadata in build tree" >&2
+    exit 1
+fi
 
 cat <<EOF
 TAO Revival modern draft materialised at:
