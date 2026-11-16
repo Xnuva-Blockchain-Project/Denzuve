@@ -71,6 +71,23 @@ patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
   < migration/patches/tao-qt-visible-labels.patch
 
 
+# TAO CP64: conservative user-facing English UI / warning wording.
+# Protocol, wallet paths, licences and translations require separate review.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-public-surface-branding.patch
+
+# TAO CP65S: CLI help must use authoritative TAO mainnet only.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-cli-mainnet-only-startup.patch
+
+# TAO CP66G: retain original OpenSSL short DER key compatibility.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-legacy-short-form-ec-der.patch
+
+# TAO CP66H: preserve original TaoCoin signed-message interoperability.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-historical-signed-message-domain.patch
+
 if [[ -e "$DEST/.git" || -L "$DEST/.git" ]]; then
     echo "STOP: unexpected Git metadata in build tree" >&2
     exit 1
