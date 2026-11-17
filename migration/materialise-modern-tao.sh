@@ -107,6 +107,10 @@ patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
 patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
   < migration/patches/tao-qt-form-branding-71n.patch
 
+# TAO CP71T: static Qt balance examples only.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-qt-balance-placeholders-71t.patch
+
 if [[ -e "$DEST/.git" || -L "$DEST/.git" ]]; then
     echo "STOP: unexpected Git metadata in build tree" >&2
     exit 1
