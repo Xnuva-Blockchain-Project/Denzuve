@@ -1,0 +1,375 @@
+--- a/src/common/args.cpp
++++ b/src/common/args.cpp
+@@ -34,7 +34,7 @@
+ #include <utility>
+ #include <variant>
+ 
+-const char * const BITCOIN_CONF_FILENAME = "bitcoin.conf";
++const char * const BITCOIN_CONF_FILENAME = "tao.conf";
+ const char * const BITCOIN_SETTINGS_FILENAME = "settings.json";
+ 
+ ArgsManager gArgs;
+@@ -764,11 +764,10 @@
+ #ifdef WIN32
+     // Windows
+     // Check for existence of datadir in old location and keep it there
+-    fs::path legacy_path = GetSpecialFolderPath(CSIDL_APPDATA) / "Bitcoin";
+-    if (fs::exists(legacy_path)) return legacy_path;
++    // TAO Revival must never automatically reuse a Bitcoin data directory.
+ 
+     // Otherwise, fresh installs can start in the new, "proper" location
+-    return GetSpecialFolderPath(CSIDL_LOCAL_APPDATA) / "Bitcoin";
++    return GetSpecialFolderPath(CSIDL_LOCAL_APPDATA) / "TAO Revival Modern";
+ #else
+     fs::path pathRet;
+     char* pszHome = getenv("HOME");
+@@ -778,10 +777,10 @@
+         pathRet = fs::path(pszHome);
+ #ifdef __APPLE__
+     // macOS
+-    return pathRet / "Library/Application Support/Bitcoin";
++    return pathRet / "Library/Application Support/TAO Revival Modern";
+ #else
+     // Unix-like
+-    return pathRet / ".bitcoin";
++    return pathRet / ".tao-revival-modern";
+ #endif
+ #endif
+ }
+--- a/src/qt/editaddressdialog.cpp
++++ b/src/qt/editaddressdialog.cpp
+@@ -110,7 +110,7 @@
+             break;
+         case AddressTableModel::INVALID_ADDRESS:
+             QMessageBox::warning(this, windowTitle(),
+-                tr("The entered address \"%1\" is not a valid Bitcoin address.").arg(ui->addressEdit->text()),
++                tr("The entered address \"%1\" is not a valid TAO address.").arg(ui->addressEdit->text()),
+                 QMessageBox::Ok, QMessageBox::Ok);
+             break;
+         case AddressTableModel::DUPLICATE_ADDRESS:
+--- a/src/qt/forms/debugwindow.ui
++++ b/src/qt/forms/debugwindow.ui
+@@ -279,7 +279,7 @@
+           <set>Qt::LinksAccessibleByMouse|Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse</set>
+          </property>
+          <property name="toolTip">
+-          <string>Network addresses that your Bitcoin node is currently using to communicate with other nodes.</string>
++          <string>Network addresses that your TAO node is currently using to communicate with other nodes.</string>
+          </property>
+         </widget>
+        </item>
+--- a/src/qt/forms/modaloverlay.ui
++++ b/src/qt/forms/modaloverlay.ui
+@@ -130,7 +130,7 @@
+              <item>
+               <widget class="QLabel" name="infoText">
+                <property name="text">
+-                <string>Recent transactions may not yet be visible, and therefore your wallet's balance might be incorrect. This information will be correct once your wallet has finished synchronizing with the bitcoin network, as detailed below.</string>
++                <string>Recent transactions may not yet be visible, and therefore your wallet's balance might be incorrect. This information will be correct once your wallet has finished synchronizing with the TAO network, as detailed below.</string>
+                </property>
+                <property name="textFormat">
+                 <enum>Qt::RichText</enum>
+@@ -149,7 +149,7 @@
+                 </font>
+                </property>
+                <property name="text">
+-                <string>Attempting to spend bitcoins that are affected by not-yet-displayed transactions will not be accepted by the network.</string>
++                <string>Attempting to spend TAO that are affected by not-yet-displayed transactions will not be accepted by the network.</string>
+                </property>
+                <property name="textFormat">
+                 <enum>Qt::RichText</enum>
+--- a/src/qt/forms/openuridialog.ui
++++ b/src/qt/forms/openuridialog.ui
+@@ -11,7 +11,7 @@
+    </rect>
+   </property>
+   <property name="windowTitle">
+-   <string>Open bitcoin URI</string>
++   <string>Open TAO URI</string>
+   </property>
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item>
+--- a/src/qt/forms/optionsdialog.ui
++++ b/src/qt/forms/optionsdialog.ui
+@@ -318,7 +318,7 @@
+        <item>
+         <widget class="QCheckBox" name="mapPortNatpmp">
+          <property name="toolTip">
+-          <string>Automatically open the Bitcoin client port on the router. This only works when your router supports PCP or NAT-PMP and it is enabled. The external port could be random.</string>
++          <string>Automatically open the TAO client port on the router. This only works when your router supports PCP or NAT-PMP and it is enabled. The external port could be random.</string>
+          </property>
+          <property name="text">
+           <string>Map port using PCP or NA&amp;T-PMP</string>
+@@ -338,7 +338,7 @@
+        <item>
+         <widget class="QCheckBox" name="connectSocks">
+          <property name="toolTip">
+-          <string>Connect to the Bitcoin network through a SOCKS5 proxy.</string>
++          <string>Connect to the TAO network through a SOCKS5 proxy.</string>
+          </property>
+          <property name="text">
+           <string>&amp;Connect through SOCKS5 proxy (default proxy):</string>
+@@ -525,7 +525,7 @@
+        <item>
+         <widget class="QCheckBox" name="connectSocksTor">
+          <property name="toolTip">
+-          <string>Connect to the Bitcoin network through a separate SOCKS5 proxy for Tor onion services.</string>
++          <string>Connect to the TAO network through a separate SOCKS5 proxy for Tor onion services.</string>
+          </property>
+          <property name="text">
+           <string>Use separate SOCKS&amp;5 proxy to reach peers via Tor onion services:</string>
+--- a/src/qt/forms/overviewpage.ui
++++ b/src/qt/forms/overviewpage.ui
+@@ -73,7 +73,7 @@
+                </size>
+               </property>
+               <property name="toolTip">
+-               <string>The displayed information may be out of date. Your wallet automatically synchronizes with the Bitcoin network after a connection is established, but this process has not completed yet.</string>
++               <string>The displayed information may be out of date. Your wallet automatically synchronizes with the TAO network after a connection is established, but this process has not completed yet.</string>
+               </property>
+               <property name="text">
+                <string/>
+@@ -293,7 +293,7 @@
+                </size>
+               </property>
+               <property name="toolTip">
+-               <string>The displayed information may be out of date. Your wallet automatically synchronizes with the Bitcoin network after a connection is established, but this process has not completed yet.</string>
++               <string>The displayed information may be out of date. Your wallet automatically synchronizes with the TAO network after a connection is established, but this process has not completed yet.</string>
+               </property>
+               <property name="text">
+                <string/>
+--- a/src/qt/forms/receivecoinsdialog.ui
++++ b/src/qt/forms/receivecoinsdialog.ui
+@@ -47,7 +47,7 @@
+         <item row="6" column="0">
+          <widget class="QLabel" name="label_3">
+           <property name="toolTip">
+-           <string>An optional message to attach to the payment request, which will be displayed when the request is opened. Note: The message will not be sent with the payment over the Bitcoin network.</string>
++           <string>An optional message to attach to the payment request, which will be displayed when the request is opened. Note: The message will not be sent with the payment over the TAO network.</string>
+           </property>
+           <property name="text">
+            <string>&amp;Message:</string>
+--- a/src/qt/forms/sendcoinsdialog.ui
++++ b/src/qt/forms/sendcoinsdialog.ui
+@@ -860,7 +860,7 @@
+                     <bool>true</bool>
+                    </property>
+                    <property name="toolTip">
+-                    <string>When there is less transaction volume than space in the blocks, miners as well as relaying nodes may enforce a minimum fee. Paying only this minimum fee is just fine, but be aware that this can result in a never confirming transaction once there is more demand for bitcoin transactions than the network can process.</string>
++                    <string>When there is less transaction volume than space in the blocks, miners as well as relaying nodes may enforce a minimum fee. Paying only this minimum fee is just fine, but be aware that this can result in a never confirming transaction once there is more demand for TAO transactions than the network can process.</string>
+                    </property>
+                    <property name="text">
+                     <string>A too low fee might result in a never confirming transaction (read the tooltip)</string>
+--- a/src/qt/forms/sendcoinsentry.ui
++++ b/src/qt/forms/sendcoinsentry.ui
+@@ -50,7 +50,7 @@
+      <item>
+       <widget class="QValidatedLineEdit" name="payTo">
+        <property name="toolTip">
+-        <string>The Bitcoin address to send the payment to</string>
++        <string>The TAO address to send the payment to</string>
+        </property>
+       </widget>
+      </item>
+@@ -170,7 +170,7 @@
+      <item>
+       <widget class="QCheckBox" name="checkboxSubtractFeeFromAmount">
+        <property name="toolTip">
+-        <string>The fee will be deducted from the amount being sent. The recipient will receive less bitcoins than you enter in the amount field. If multiple recipients are selected, the fee is split equally.</string>
++        <string>The fee will be deducted from the amount being sent. The recipient will receive less TAO than you enter in the amount field. If multiple recipients are selected, the fee is split equally.</string>
+        </property>
+        <property name="text">
+         <string>S&amp;ubtract fee from amount</string>
+--- a/src/qt/forms/signverifymessagedialog.ui
++++ b/src/qt/forms/signverifymessagedialog.ui
+@@ -30,7 +30,7 @@
+        <item>
+         <widget class="QLabel" name="infoLabel_SM">
+          <property name="text">
+-          <string>You can sign messages/agreements with your legacy (P2PKH) addresses to prove you can receive bitcoins sent to them. Be careful not to sign anything vague or random, as phishing attacks may try to trick you into signing your identity over to them. Only sign fully-detailed statements you agree to.</string>
++          <string>You can sign messages/agreements with your legacy (P2PKH) addresses to prove you can receive TAO sent to them. Be careful not to sign anything vague or random, as phishing attacks may try to trick you into signing your identity over to them. Only sign fully-detailed statements you agree to.</string>
+          </property>
+          <property name="textFormat">
+           <enum>Qt::PlainText</enum>
+@@ -48,7 +48,7 @@
+          <item>
+           <widget class="QValidatedLineEdit" name="addressIn_SM">
+            <property name="toolTip">
+-            <string>The Bitcoin address to sign the message with</string>
++            <string>The TAO address to sign the message with</string>
+            </property>
+           </widget>
+          </item>
+@@ -264,7 +264,7 @@
+          <item>
+           <widget class="QValidatedLineEdit" name="addressIn_VM">
+            <property name="toolTip">
+-            <string>The Bitcoin address the message was signed with</string>
++            <string>The TAO address the message was signed with</string>
+            </property>
+           </widget>
+          </item>
+@@ -315,7 +315,7 @@
+          <item>
+           <widget class="QPushButton" name="verifyMessageButton_VM">
+            <property name="toolTip">
+-            <string>Verify the message to ensure it was signed with the specified Bitcoin address</string>
++            <string>Verify the message to ensure it was signed with the specified TAO address</string>
+            </property>
+            <property name="text">
+             <string>Verify &amp;Message</string>
+--- a/src/qt/guiutil.cpp
++++ b/src/qt/guiutil.cpp
+@@ -149,7 +149,7 @@
+ bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
+ {
+     // return if URI is not valid or is no bitcoin: URI
+-    if(!uri.isValid() || uri.scheme() != QString("bitcoin"))
++    if(!uri.isValid() || uri.scheme() != QString("tao"))
+         return false;
+ 
+     SendCoinsRecipient rv;
+@@ -212,7 +212,7 @@
+ {
+     bool bech_32 = info.address.startsWith(QString::fromStdString(Params().Bech32HRP() + "1"));
+ 
+-    QString ret = QString("bitcoin:%1").arg(bech_32 ? info.address.toUpper() : info.address);
++    QString ret = QString("tao:%1").arg(bech_32 ? info.address.toUpper() : info.address);
+     int paramCount = 0;
+ 
+     if (info.amount)
+@@ -513,8 +513,8 @@
+     if (chain == ChainType::MAIN)
+         return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin.lnk";
+     if (chain == ChainType::TESTNET) // Remove this special case when testnet CBaseChainParams::DataDir() is incremented to "testnet4"
+-        return GetSpecialFolderPath(CSIDL_STARTUP) / "Bitcoin (testnet).lnk";
+-    return GetSpecialFolderPath(CSIDL_STARTUP) / fs::u8path(strprintf("Bitcoin (%s).lnk", ChainTypeToString(chain)));
++        return GetSpecialFolderPath(CSIDL_STARTUP) / "TAO (testnet).lnk";
++    return GetSpecialFolderPath(CSIDL_STARTUP) / fs::u8path(strprintf("TAO (%s).lnk", ChainTypeToString(chain)));
+ }
+ 
+ bool GetStartOnSystemStartup()
+@@ -595,7 +595,7 @@
+     ChainType chain = gArgs.GetChainType();
+     if (chain == ChainType::MAIN)
+         return GetAutostartDir() / "bitcoin.desktop";
+-    return GetAutostartDir() / fs::u8path(strprintf("bitcoin-%s.desktop", ChainTypeToString(chain)));
++    return GetAutostartDir() / fs::u8path(strprintf("TAO-%s.desktop", ChainTypeToString(chain)));
+ }
+ 
+ bool GetStartOnSystemStartup()
+@@ -642,7 +642,7 @@
+         if (chain == ChainType::MAIN)
+             optionFile << "Name=Bitcoin\n";
+         else
+-            optionFile << strprintf("Name=Bitcoin (%s)\n", ChainTypeToString(chain));
++            optionFile << strprintf("Name=TAO (%s)\n", ChainTypeToString(chain));
+         optionFile << "Exec=" << pszExePath << strprintf(" -min -chain=%s\n", ChainTypeToString(chain));
+         optionFile << "Terminal=false\n";
+         optionFile << "Hidden=false\n";
+--- a/src/qt/intro.cpp
++++ b/src/qt/intro.cpp
+@@ -51,7 +51,7 @@
+         .arg(CLIENT_NAME)
+         .arg(m_blockchain_size_gb)
+         .arg(2009)
+-        .arg(tr("Bitcoin"))
++        .arg(tr("TAO"))
+     );
+     ui->lblExplanation2->setText(ui->lblExplanation2->text().arg(CLIENT_NAME));
+ 
+@@ -306,7 +306,7 @@
+         //: Explanatory text on the capability of the current prune target.
+         tr("(sufficient to restore backups %n day(s) old)", "", expected_backup_days));
+     ui->sizeWarningLabel->setText(
+-        tr("%1 will download and store a copy of the Bitcoin block chain.").arg(CLIENT_NAME) + " " +
++        tr("%1 will download and store a copy of the TAO block chain.").arg(CLIENT_NAME) + " " +
+         storageRequiresMsg.arg(m_required_space_gb) + " " +
+         tr("The wallet will also be stored in this directory.")
+     );
+--- a/src/qt/paymentserver.cpp
++++ b/src/qt/paymentserver.cpp
+@@ -33,7 +33,7 @@
+ #include <QUrlQuery>
+ 
+ const int BITCOIN_IPC_CONNECT_TIMEOUT = 1000; // milliseconds
+-const QString BITCOIN_IPC_PREFIX("bitcoin:");
++const QString BITCOIN_IPC_PREFIX("tao:");
+ 
+ //
+ // Create a name that is unique for:
+@@ -42,7 +42,7 @@
+ //
+ static QString ipcServerName()
+ {
+-    QString name("BitcoinQt");
++    QString name("TaoRevivalModernQt");
+ 
+     // Append a simple hash of the datadir
+     // Note that gArgs.GetDataDirNet() returns a different path
+@@ -143,7 +143,7 @@
+         if (!uriServer->listen(name)) {
+             // constructor is called early in init, so don't use "Q_EMIT message()" here
+             QMessageBox::critical(nullptr, tr("Payment request error"),
+-                tr("Cannot start bitcoin: click-to-pay handler"));
++                tr("Cannot start tao: click-to-pay handler"));
+         }
+         else {
+             connect(uriServer, &QLocalServer::newConnection, this, &PaymentServer::handleURIConnection);
+@@ -189,9 +189,9 @@
+         return;
+     }
+ 
+-    if (s.startsWith("bitcoin://", Qt::CaseInsensitive))
+-    {
+-        Q_EMIT message(tr("URI handling"), tr("'bitcoin://' is not a valid URI. Use 'bitcoin:' instead."),
++    if (s.startsWith("tao://", Qt::CaseInsensitive))
++    {
++        Q_EMIT message(tr("URI handling"), tr("'tao://' is not a valid URI. Use 'tao:' instead."),
+             CClientUIInterface::MSG_ERROR);
+     }
+     else if (s.startsWith(BITCOIN_IPC_PREFIX, Qt::CaseInsensitive)) // bitcoin: URI
+@@ -221,7 +221,7 @@
+             }
+             else
+                 Q_EMIT message(tr("URI handling"),
+-                    tr("URI cannot be parsed! This can be caused by an invalid Bitcoin address or malformed URI parameters."),
++                    tr("URI cannot be parsed! This can be caused by an invalid TAO address or malformed URI parameters."),
+                     CClientUIInterface::ICON_WARNING);
+ 
+             return;
+--- a/src/qt/sendcoinsdialog.cpp
++++ b/src/qt/sendcoinsdialog.cpp
+@@ -211,7 +211,7 @@
+             }
+         } else if (model->wallet().privateKeysDisabled()) {
+             ui->sendButton->setText(tr("Cr&eate Unsigned"));
+-            ui->sendButton->setToolTip(tr("Creates a Partially Signed Bitcoin Transaction (PSBT) for use with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.").arg(CLIENT_NAME));
++            ui->sendButton->setToolTip(tr("Creates a Partially Signed TAO Transaction (PSBT) for use with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.").arg(CLIENT_NAME));
+         }
+ 
+         // set the smartfee-sliders default value (wallets default conf.target or last stored value)
+@@ -333,12 +333,12 @@
+         /*: Text to inform a user attempting to create a transaction of their current options. At this stage,
+             a user can only create a PSBT. This string is displayed when private keys are disabled and an external
+             signer is not available. */
+-        question_string.append(tr("Please, review your transaction proposal. This will produce a Partially Signed Bitcoin Transaction (PSBT) which you can save or copy and then sign with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.").arg(CLIENT_NAME));
++        question_string.append(tr("Please, review your transaction proposal. This will produce a Partially Signed TAO Transaction (PSBT) which you can save or copy and then sign with e.g. an offline %1 wallet, or a PSBT-compatible hardware wallet.").arg(CLIENT_NAME));
+     } else if (model->getOptionsModel()->getEnablePSBTControls()) {
+         /*: Text to inform a user attempting to create a transaction of their current options. At this stage,
+             a user can send their transaction or create a PSBT. This string is displayed when both private keys
+             and PSBT controls are enabled. */
+-        question_string.append(tr("Please, review your transaction. You can create and send this transaction or create a Partially Signed Bitcoin Transaction (PSBT), which you can save or copy and then sign with, e.g., an offline %1 wallet, or a PSBT-compatible hardware wallet.").arg(CLIENT_NAME));
++        question_string.append(tr("Please, review your transaction. You can create and send this transaction or create a Partially Signed TAO Transaction (PSBT), which you can save or copy and then sign with, e.g., an offline %1 wallet, or a PSBT-compatible hardware wallet.").arg(CLIENT_NAME));
+     } else {
+         /*: Text to prompt a user to review the details of the transaction they are attempting to send. */
+         question_string.append(tr("Please, review your transaction."));
+@@ -973,7 +973,7 @@
+         }
+         else if (!IsValidDestination(dest)) // Invalid address
+         {
+-            ui->labelCoinControlChangeLabel->setText(tr("Warning: Invalid Bitcoin address"));
++            ui->labelCoinControlChangeLabel->setText(tr("Warning: Invalid TAO address"));
+         }
+         else // Valid address
+         {

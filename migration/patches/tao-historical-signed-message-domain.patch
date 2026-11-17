@@ -1,0 +1,15 @@
+--- a/src/common/signmessage.cpp
++++ b/src/common/signmessage.cpp
+@@ -20,9 +20,11 @@
+ /**
+  * Text used to signify that a signed message follows and to prevent
+  * inadvertently signing a transaction.
+  */
+-const std::string MESSAGE_MAGIC = "Bitcoin Signed Message:\n";
++// TAO historical message domain must exactly match original 0.8.7.5 wallets.
++// Do not use the unrelated Bitcoin message-signing domain for TAO signatures.
++const std::string MESSAGE_MAGIC = "TaoCoin Signed Message:\n";
+ 
+ MessageVerificationResult MessageVerify(
+     const std::string& address,
+     const std::string& signature,
