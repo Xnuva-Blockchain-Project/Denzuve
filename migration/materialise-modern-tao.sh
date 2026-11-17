@@ -103,6 +103,10 @@ patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
 patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
   < migration/patches/tao-qt-uri-labels-71g.patch
 
+# TAO CP71N: user-facing GUI form labels only.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-qt-form-branding-71n.patch
+
 if [[ -e "$DEST/.git" || -L "$DEST/.git" ]]; then
     echo "STOP: unexpected Git metadata in build tree" >&2
     exit 1
