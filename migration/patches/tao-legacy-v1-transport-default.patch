@@ -1,0 +1,7 @@
+--- a/src/net.h
++++ b/src/net.h
+@@ -101 +101,3 @@
+-static constexpr bool DEFAULT_V2_TRANSPORT{true};
++// TAO Revival CP67: prefer legacy-compatible v1 P2P transport.
++// Explicit -v2transport=1 remains available for future testing.
++static constexpr bool DEFAULT_V2_TRANSPORT{false};

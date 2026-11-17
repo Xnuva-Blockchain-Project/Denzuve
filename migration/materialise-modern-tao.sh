@@ -88,6 +88,11 @@ patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
 patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
   < migration/patches/tao-historical-signed-message-domain.patch
 
+# TAO CP67G: default to legacy-compatible v1 P2P transport.
+# Explicit -v2transport=1 remains available for testing.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-legacy-v1-transport-default.patch
+
 if [[ -e "$DEST/.git" || -L "$DEST/.git" ]]; then
     echo "STOP: unexpected Git metadata in build tree" >&2
     exit 1
