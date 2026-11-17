@@ -93,6 +93,11 @@ patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
 patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
   < migration/patches/tao-legacy-v1-transport-default.patch
 
+# TAO CP70I: user-facing wallet RPC branding only.
+# Preserve internal identifiers, wallet formats and consensus.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-wallet-rpc-branding-70i.patch
+
 if [[ -e "$DEST/.git" || -L "$DEST/.git" ]]; then
     echo "STOP: unexpected Git metadata in build tree" >&2
     exit 1
