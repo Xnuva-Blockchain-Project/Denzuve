@@ -98,6 +98,11 @@ patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
 patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
   < migration/patches/tao-wallet-rpc-branding-70i.patch
 
+# TAO CP71G: GUI payment URI labels only.
+# Existing tao: protocol handling remains unchanged.
+patch --batch --fuzz=0 --forward -p1 -d "$DEST" \
+  < migration/patches/tao-qt-uri-labels-71g.patch
+
 if [[ -e "$DEST/.git" || -L "$DEST/.git" ]]; then
     echo "STOP: unexpected Git metadata in build tree" >&2
     exit 1
