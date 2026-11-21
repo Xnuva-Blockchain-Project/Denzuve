@@ -1,24 +1,26 @@
-# TAO Revival (TAO) — Proposed RandomX hard-fork migration
+# TaoX (TAOX) — Proposed continuation of TAO Revival and RandomX hard-fork migration
 
 **Status: engineering decision / experimental design, NOT activated, NOT release-ready.**
 **Created:** 2026-11-21
-**Branch:** `modernisation/randomx-hardfork-experimental-20261121` (forked from `modernisation/bitcoin-core-31.1-experimental-do-not-release`)
+**Current development branch:** `modernisation/taox-randomx` (forked from `modernisation/randomx-hardfork-experimental-20261121` at `b275f88c951c1b9744f75724769c21ad6c950087`; both predecessors preserved)
 **Principle:** Reliability first, release second.
 
 ## Planned RandomX-era public rebrand
+
+**Naming correction:** The approved ticker is **TAOX**, not TOAX. No change to live identifiers or consensus is authorised by this documentation update.
 
 **Operator naming decision recorded 2026-11-21; future release only.**
 
 | | Existing live identity | Intended modernised public identity |
 |---|---|---|
 | Display name | TAO Revival | **TaoX** |
-| Display ticker | **TAO** | **TOAX** |
+| Display ticker | **TAO** | **TAOX** |
 | Meaning of X | n/a | RandomX Proof-of-Work algorithm |
 
 **A name or ticker change is presentation/metadata, not by itself a consensus hard fork.** The separately specified future RandomX PoW activation is a consensus hard fork. No rebrand has yet been deployed to wallets, binaries, explorers, websites, RPC systems, exchange listings or the live network.
 
 - [ ] Preserve original genesis, network identity, historical block IDs, transactions, supply/denomination, UTXO ownership, addresses, private keys, signature domains, existing wallet backups and chain continuity. **No 1:1 coin swap, new token issuance, re-genesis or balance reset.**
-- [ ] Stage TaoX/TOAX on the isolated modernised wallet GUI, release name, documentation, desktop shortcuts, package labels and user-facing notices. Preserve historic TAO Revival/TAO labels where necessary to explain previous transactions and ensure backward-compatible recovery.
+- [ ] Stage TaoX/TAOX on the isolated modernised wallet GUI, release name, documentation, desktop shortcuts, package labels and user-facing notices. Preserve historic TAO Revival/TAO labels where necessary to explain previous transactions and ensure backward-compatible recovery.
 - [ ] Inventory embedded old-brand identifiers in RPC, wallet filenames/paths, URI handling, configuration, network P2P, miners and cross-system APIs. Do **not** globally find/replace TAO or rename consensus-critical structures, addresses, signed-message prefixes, database keys or networking magic by accident.
 - [ ] Plan coordinated, non-lossy ticker/name mapping for EZHScan, XNUVA Game treasury and mining rotation, web properties and any third-party software. Preserve old identifiers as explicit aliases when required for historic data reconciliation; avoid duplicate credits.
 - [ ] Validate wallet import/backup/restore, historic and new transactions, mining rewards, display units, payment URIs, mixed-version compatibility, peer upgrades and chain explorers in isolated tests.
