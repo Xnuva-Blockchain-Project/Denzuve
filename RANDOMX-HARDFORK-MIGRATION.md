@@ -21,6 +21,16 @@ During each coin's independent modernisation, investigate transitioning **future
 
 Legacy PoW is Scrypt 1024_1_1_256; block IDs are double-SHA256. Preserve the authoritative tao-revival baseline, 5-minute spacing, 2-block difficulty adjustment, existing Scrypt history and all legacy monetary/network/address rules. See migration/TAO-REVIVAL-CONSENSUS-PRESERVATION.md. This branch also contains Bitcoin Core 31.1 mechanical port work, which is unfinished and unreleased.
 
+## Shared RandomX foundation (RX-001 — source prepared)
+
+The common hashing module is being developed independently on XNUVA branch `feature/shared-randomx-engine-20261121`:
+
+- [Shared RandomX engine source](https://github.com/Xnuva-Blockchain-Project/Xnuva/tree/feature/shared-randomx-engine-20261121/shared-randomx-engine)
+- [Per-coin adapter contract and hybrid PoS precautions](https://github.com/Xnuva-Blockchain-Project/Xnuva/blob/feature/shared-randomx-engine-20261121/shared-randomx-engine/docs/COIN-INTEGRATION.md)
+- Foundation is pinned to XNUVA's existing RandomX V2 source at `853a3171ece198f60b5125a16dca83d68a8f53c3`, with standalone CMake, an explicit 80-byte-header interface, light-cache reuse and reference-vector tests.
+- **Current evidence:** GitHub source commit verified; actual standalone compilation and CTest runs are still pending. The engine is NOT imported, linked or activated by this coin yet.
+- A separately audited **coin adapter** must provide historical consensus compatibility, a deterministic seed schedule, target/difficulty, activation and independent network testing before it is safe to use. TAO's first local RandomX hashing adapter remains a separate, preliminary experiment and must not be silently replaced before shared-foundation qualification.
+
 ## Required stage gates
 
 - [x] Separate experimental branch created. This is a planning milestone only.
