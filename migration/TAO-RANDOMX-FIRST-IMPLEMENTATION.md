@@ -40,4 +40,34 @@ Expected tests: pinned XNUVA RandomX V2 string vector, canonical 80-byte header 
 4. Verify historic TAO chain and wallet equivalence against the Revival authoritative implementation, then mine post-fork blocks on isolated independent nodes.
 5. Complete GSH release gates, operator/miner coordination and separate approval for any live activation. An enabled CMake test option does NOT authorise a live hard fork.
 
+
+## TaoX shared-engine integration checkpoint — 21 November 2026
+
+**SOURCE-LEVEL ONLY — BUILD AND TESTS NOT EXECUTED.** On branch `modernisation/taox-randomx`, the optional hashing self-test now consumes the separate, shared `Xnuva-RandomX-Engine` at **exact commit `857841056ed939eeea4fd640463b54b6a5cd54af`**. The TaoX adapter delegates hashing/cache management to `xnuva::randomx_foundation::LightHasher` and retains its existing `uint256` byte representation and serialized 80-byte header interface. The previous direct vendored RandomX code in the TaoX adapter has been removed; this does **not** remove the historical Scrypt path.
+
+The original commands above describe the preserved experimental branch and its earlier direct vendored-library dependency. To test **the new TaoX branch**, substitute the following checkout:
+
+```bash
+git switch modernisation/taox-randomx
+bash migration/materialise-modern-tao.sh /tmp/taox-randomx-source
+cmake -S /tmp/taox-randomx-source -B /tmp/taox-randomx-build \
+  -DTAO_EXPERIMENTAL_RANDOMX_HASHING=ON \
+  -DBUILD_DAEMON=OFF -DBUILD_GUI=OFF -DBUILD_CLI=OFF -DBUILD_TESTS=OFF
+cmake --build /tmp/taox-randomx-build --target tao-randomx-selftest -j2
+/tmp/taox-randomx-build/bin/tao-randomx-selftest
+```
+
+Before executing, verify the materialiser overlays the `migration/modern-tao-draft/src` files into the disposable source tree and check the local build configuration, dependency source SHA and log output. A compilation failure or fixture mismatch is a blocker, not a reason to bypass verification.
+
+**Acceptance checklist (all pending):**
+- [ ] Reproduce source materialisation and CMake configuration on the development machine.
+- [ ] Confirm the fetched *shared-engine* Git revision exactly matches the pinned SHA; review upstream licence provenance.
+- [ ] Compile the shared library, the TaoX adapter and the isolated test executable.
+- [ ] Run the unchanged deterministic RandomX V2 reference vectors; independently compare byte-for-byte with the original adapter.
+- [ ] Run shared-engine tests, then negative, boundary and cross-platform tests before choosing any consensus activation rules.
+- [ ] Independently verify legacy Scrypt replay remains unchanged; check that production daemon, consensus, wallet and miner builds have **no RandomX linkage** unless explicitly approved.
+- [ ] Retain checkpoint logs and precise commit/build hashes. No live-node or network deployment is permitted.
+
+**Separate later work:** TaoX/TAOX GUI and executable branding; coin-specific RandomX seed schedule, activation, difficulty/chainwork and P2P compatibility. No mining, wallet, treasury or live system is changed in this checkpoint.
+
 **Reliability first, release second.**
