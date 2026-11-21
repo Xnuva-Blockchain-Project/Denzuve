@@ -6,6 +6,9 @@
 // Difficulty and chainwork consensus are not implemented.
 
 #include <tao/consensus/pow_algorithm.h>
+#include <arith_uint256.h>
+#include <pow.h>
+#include <uint256.h>
 
 #include <cstdint>
 #include <iostream>
@@ -77,8 +80,17 @@ Result Select(
     }
 
     // Fail closed on malformed laboratory policy.
-    if (policy->activation_height <= 0 ||
-        policy->initial_randomx_bits == 0) {
+    if (policy->activation_height <= 0) {
+        return {Decision::Reject, std::nullopt};
+    }
+
+    const uint256 pow_limit{
+        "00000ffffffffffffffffffffffffffffffff"
+        "fffffffffffffffffffffffffff"
+    };
+
+    if (!DeriveTarget(
+            policy->initial_randomx_bits, pow_limit)) {
         return {Decision::Reject, std::nullopt};
     }
 
@@ -187,6 +199,21 @@ int main()
                test_policy, Decision::Reject))
         return 12;
 
+    for (uint32_t bad_bits : {
+        uint32_t{0},
+        uint32_t{0x1e8fffff},
+        uint32_t{0x2300ffff},
+        uint32_t{0x1f7fffff}
+    }) {
+        if (!check(
+                999,
+                ParentStatus::Verified,
+                ActivationPolicy{1000, bad_bits},
+                Decision::Reject))
+            return 13;
+    }
+
+    std::cout << "PASS: invalid compact targets rejected\n";
     std::cout << "PASS: malformed inputs rejected\n";
     std::cout << "PASS: no mainnet activation\n";
     std::cout << "PASS: no chainwork policy invented\n";
