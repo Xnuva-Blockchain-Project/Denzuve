@@ -80,38 +80,33 @@ target_link_libraries(bitcoin_consensus
     secp256k1
 )
 
-# Experimental RandomX v2 hashing adapter for TAO Revival.
-# Disabled by default: this target NEVER alters mainnet PoW validation.
-# Consensus switch, seed schedule and difficulty transition are NOT implemented.
+# Experimental TaoX hashing adapter: consumes the version-pinned shared
+# XNUVA RandomX foundation. OFF by default; never linked into node consensus.
+# This is a source-only development gate, not a hard-fork activation.
 option(TAO_EXPERIMENTAL_RANDOMX_HASHING
-  "Build isolated TAO RandomX v2 hashing self-test (no consensus activation)"
+  "Build isolated TaoX RandomX v2 hashing self-test (no consensus activation)"
   OFF
 )
 if(TAO_EXPERIMENTAL_RANDOMX_HASHING)
   include(FetchContent)
-  # XNUVA's reviewed RandomX v2 source; pin exact commit, NEVER a moving branch.
-  # No consensus rule may silently depend on a different RandomX variant.
-  FetchContent_Declare(tao_xnuva_randomx
-    GIT_REPOSITORY https://github.com/Xnuva-Blockchain-Project/Xnuva.git
-    GIT_TAG 853a3171ece198f60b5125a16dca83d68a8f53c3
+  # Keep this exact audited commit until tests justify a controlled update.
+  FetchContent_Declare(taox_shared_randomx_foundation
+    GIT_REPOSITORY https://github.com/Xnuva-Blockchain-Project/Xnuva-RandomX-Engine.git
+    GIT_TAG 857841056ed939eeea4fd640463b54b6a5cd54af
     GIT_SHALLOW FALSE
-    SOURCE_SUBDIR src/randomx
   )
-  FetchContent_MakeAvailable(tao_xnuva_randomx)
-  if(NOT TARGET randomx)
-    message(FATAL_ERROR "Pinned XNUVA RandomX library was not provided")
+  FetchContent_MakeAvailable(taox_shared_randomx_foundation)
+  if(NOT TARGET xnuva::randomx_foundation)
+    message(FATAL_ERROR "Pinned shared RandomX foundation target unavailable")
   endif()
 
   add_library(tao_randomx_experimental STATIC
     tao/crypto/randomx.cpp
   )
-  target_include_directories(tao_randomx_experimental PRIVATE
-    "${tao_xnuva_randomx_SOURCE_DIR}/src/randomx/src"
-  )
   target_link_libraries(tao_randomx_experimental PRIVATE
     core_interface
     bitcoin_consensus
-    randomx
+    xnuva::randomx_foundation
   )
 
   add_executable(tao-randomx-selftest
@@ -121,9 +116,9 @@ if(TAO_EXPERIMENTAL_RANDOMX_HASHING)
     core_interface
     bitcoin_consensus
     tao_randomx_experimental
-    randomx
+    xnuva::randomx_foundation
   )
-  # Standalone testing only. No daemon, node, wallet or validation linkage.
+  # Hash vectors only. No node, mining RPC, wallet or production PoW path.
 endif()
 
 if(WITH_ZMQ)
