@@ -4,6 +4,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <tao/consensus/pow_hash_dispatch.h>
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <validation.h>
@@ -3838,9 +3839,14 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
 
 static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
-    // Check proof of work matches claimed amount
-    if (fCheckPOW && !CheckProofOfWork(block.GetPoWHash(), block.nBits, consensusParams))
-        return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
+    // Check historical Scrypt PoW through the modular dispatcher.
+    // Experimental integration only: RandomX remains disabled.
+    if (fCheckPOW) {
+        const auto pow_hash = taox::consensus::CalculatePoWHash(
+            block, taox::consensus::PoWAlgorithm::Scrypt, std::nullopt);
+        if (!pow_hash || !CheckProofOfWork(*pow_hash, block.nBits, consensusParams))
+            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
+    }
 
     return true;
 }
