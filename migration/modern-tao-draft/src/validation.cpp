@@ -5,6 +5,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <tao/consensus/pow_hash_dispatch.h>
+#include <tao/consensus/pow_contextual_hash.h>
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <validation.h>
@@ -4111,6 +4112,23 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     const Consensus::Params& consensusParams = chainman.GetConsensus();
     if (block.nBits != GetNextWorkRequired(pindexPrev, &block, consensusParams))
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "bad-diffbits", "incorrect proof of work");
+
+    // TaoX experimental contextual PoW verification.
+    // Retain the existing context-free Scrypt anti-DoS check.
+    // The selector remains Scrypt-only; RandomX is disabled.
+    const auto contextual_pow_hash =
+        taox::consensus::CalculateContextualPoWHash(
+            block, pindexPrev);
+
+    if (!contextual_pow_hash ||
+        !CheckProofOfWork(*contextual_pow_hash,
+                          block.nBits, consensusParams)) {
+        return state.Invalid(
+            BlockValidationResult::BLOCK_INVALID_HEADER,
+            "high-hash-contextual",
+            "contextual proof of work failed");
+    }
+
 
     // TAO Revival default checkpoint at height 1.
     // The legacy client allowed -checkpoints=0; configurability can be restored
