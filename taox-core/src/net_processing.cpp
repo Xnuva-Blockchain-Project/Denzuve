@@ -61,6 +61,9 @@
 #include <util/time.h>
 #include <util/trace.h>
 #include <validation.h>
+#include <pow.h>
+#include <tao/consensus/pow_hash_dispatch.h>
+#include <optional>
 
 #include <algorithm>
 #include <array>
@@ -2616,19 +2619,107 @@ void PeerManagerImpl::SendBlockTransactions(CNode& pfrom, Peer& peer, const CBlo
     MakeAndPushMessage(pfrom, NetMsgType::BLOCKTXN, resp);
 }
 
-bool PeerManagerImpl::CheckHeadersPoW(const std::vector<CBlockHeader>& headers, Peer& peer)
+bool PeerManagerImpl::CheckHeadersPoW(
+    const std::vector<CBlockHeader>& headers, Peer& peer)
 {
-    // Do these headers have proof-of-work matching what's claimed?
-    if (!HasValidProofOfWork(headers, m_chainparams.GetConsensus())) {
-        Misbehaving(peer, "header with invalid proof of work");
-        return false;
+    const auto& params = m_chainparams.GetConsensus();
+
+    // Historical mainnet remains Scrypt-only.
+    if (params.randomx_activation_height == -1) {
+        if (!HasValidProofOfWork(headers, params)) {
+            Misbehaving(peer, "header with invalid proof of work");
+            return false;
+        }
+
+        if (!CheckHeadersAreContinuous(headers)) {
+            Misbehaving(peer, "non-continuous headers sequence");
+            return false;
+        }
+
+        return true;
     }
 
-    // Are these headers connected to each other?
+    if (headers.empty()) return true;
+
     if (!CheckHeadersAreContinuous(headers)) {
         Misbehaving(peer, "non-continuous headers sequence");
         return false;
     }
+
+    // Experimental connected-header verification only.
+    // Unknown-parent presynchronisation remains unsupported.
+    LOCK(cs_main);
+
+    const CBlockIndex* anchor =
+        m_chainman.m_blockman.LookupBlockIndex(
+            headers.front().hashPrevBlock);
+
+    if (!anchor ||
+        !anchor->IsValid(BLOCK_VALID_TREE) ||
+        anchor->nHeight < 0 ||
+        anchor->nHeight == std::numeric_limits<int>::max()) {
+        return false;
+    }
+
+    const int first_height = anchor->nHeight + 1;
+
+    if (headers.size() >
+        static_cast<size_t>(
+            std::numeric_limits<int>::max() - first_height)) {
+        return false;
+    }
+
+    for (size_t i = 0; i < headers.size(); ++i) {
+        const int height = first_height + static_cast<int>(i);
+        const auto& header = headers[i];
+
+        const auto algorithm =
+            taox::consensus::SelectPoWAlgorithm(height, params);
+
+        if (!algorithm) return false;
+
+        std::optional<uint256> seed;
+
+        if (*algorithm == taox::consensus::PoWAlgorithm::RandomX) {
+            const auto seed_height =
+                taox::consensus::RandomXSeedHeight(height, params);
+
+            if (!seed_height) return false;
+
+            if (*seed_height >= first_height) {
+                const size_t index =
+                    static_cast<size_t>(
+                        *seed_height - first_height);
+
+                if (index >= i) return false;
+
+                seed = headers[index].GetHash();
+            } else {
+                const CBlockIndex* ancestor =
+                    anchor->GetAncestor(
+                        static_cast<int>(*seed_height));
+
+                if (!ancestor ||
+                    !ancestor->IsValid(BLOCK_VALID_TREE)) {
+                    return false;
+                }
+
+                seed = ancestor->GetBlockHash();
+            }
+        }
+
+        const auto pow_hash =
+            taox::consensus::CalculatePoWHash(
+                header, algorithm, seed);
+
+        if (!pow_hash ||
+            !CheckProofOfWork(*pow_hash, header.nBits, params)) {
+            Misbehaving(
+                peer, "header with invalid contextual proof of work");
+            return false;
+        }
+    }
+
     return true;
 }
 
