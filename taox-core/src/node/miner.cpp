@@ -123,7 +123,8 @@ void BlockAssembler::resetBlock()
 std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
 {
     // TAO migration: fail closed until chain identity is qualified.
-    if (!tao::security::ProductionBlockCreationMayBeEnabled()) {
+    if (chainparams.GetChainType() != ChainType::REGTEST &&
+        !tao::security::ProductionBlockCreationMayBeEnabled()) {
         throw std::runtime_error(
             "TAO: block production disabled pending chain verification");
     }

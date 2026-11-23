@@ -30,6 +30,6 @@ void SetupChainParamsBaseOptions(ArgsManager& argsman);
 const CBaseChainParams& BaseParams();
 void SelectBaseParams(ChainType chain);
 
-#define LIST_CHAIN_NAMES "main"
+#define LIST_CHAIN_NAMES "main, regtest"
 
 #endif // BITCOIN_CHAINPARAMSBASE_H

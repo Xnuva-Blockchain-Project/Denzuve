@@ -4113,7 +4113,7 @@ arith_uint256 CalculateClaimedHeadersWork(std::span<const CBlockHeader> headers)
  *  v0.12 and v0.15 (when no additional protection was in place) whereby an attacker could unboundedly
  *  grow our in-memory block index. See https://bitcoincore.org/en/2024/07/03/disclose-header-spam.
  */
-static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, BlockManager& blockman, const ChainstateManager& chainman, const CBlockIndex* pindexPrev) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
+static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, BlockManager& blockman, const ChainstateManager& chainman, const CBlockIndex* pindexPrev, bool check_pow = true) EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
 {
     AssertLockHeld(::cs_main);
     assert(pindexPrev != nullptr);
@@ -4134,24 +4134,28 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     // TaoX experimental contextual PoW verification.
     // Retain the existing context-free Scrypt anti-DoS check.
     // The selector remains Scrypt-only; RandomX is disabled.
-    const auto contextual_pow_hash =
-        taox::consensus::CalculateContextualPoWHash(
-            block, pindexPrev, consensusParams);
+    // Mining templates have not yet solved proof of work.
+    // Real block/header acceptance always uses check_pow=true.
+    if (check_pow) {
+        const auto contextual_pow_hash =
+            taox::consensus::CalculateContextualPoWHash(
+                block, pindexPrev, consensusParams);
 
-    if (!contextual_pow_hash ||
-        !CheckProofOfWork(*contextual_pow_hash,
-                          block.nBits, consensusParams)) {
-        return state.Invalid(
-            BlockValidationResult::BLOCK_INVALID_HEADER,
-            "high-hash-contextual",
-            "contextual proof of work failed");
+        if (!contextual_pow_hash ||
+            !CheckProofOfWork(*contextual_pow_hash,
+                              block.nBits, consensusParams)) {
+            return state.Invalid(
+                BlockValidationResult::BLOCK_INVALID_HEADER,
+                "high-hash-contextual",
+                "contextual proof of work failed");
+        }
     }
-
 
     // TAO Revival default checkpoint at height 1.
     // The legacy client allowed -checkpoints=0; configurability can be restored
     // during integration, but the default historical chain is preserved here.
-    if (nHeight == 1 &&
+    if (chainman.GetParams().GetChainType() == ChainType::MAIN &&
+        nHeight == 1 &&
         block.GetHash() != uint256{"717fc5ef97ded9f7d514fcb1ed558bc76596ce85f09890efa6e668d228c4a57f"}) {
         return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER,
                              "checkpoint-mismatch",
@@ -4572,7 +4576,7 @@ BlockValidationState TestBlockValidity(
      * - do run ContextualCheckBlock()
      */
 
-    if (!ContextualCheckBlockHeader(block, state, chainstate.m_blockman, chainstate.m_chainman, tip)) {
+    if (!ContextualCheckBlockHeader(block, state, chainstate.m_blockman, chainstate.m_chainman, tip, check_pow)) {
         if (state.IsValid()) NONFATAL_UNREACHABLE();
         return state;
     }

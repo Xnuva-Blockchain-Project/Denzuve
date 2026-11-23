@@ -8,6 +8,7 @@
 #include <consensus/merkle.h>
 #include <consensus/params.h>
 #include <primitives/block.h>
+#include <pow.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <uint256.h>
@@ -144,6 +145,103 @@ public:
     }
 };
 
+
+class CRegTestParams final : public CChainParams
+{
+public:
+    CRegTestParams()
+    {
+        m_chain_type = ChainType::REGTEST;
+
+        consensus.signet_blocks = false;
+        consensus.signet_challenge.clear();
+        consensus.nSubsidyHalvingInterval = 210000;
+
+        consensus.BIP34Height = std::numeric_limits<int>::max();
+        consensus.BIP34Hash.SetNull();
+        consensus.BIP65Height = std::numeric_limits<int>::max();
+        consensus.BIP66Height = std::numeric_limits<int>::max();
+        consensus.CSVHeight = std::numeric_limits<int>::max();
+        consensus.SegwitHeight = std::numeric_limits<int>::max();
+        consensus.MinBIP9WarningHeight = std::numeric_limits<int>::max();
+        DisableAllVersionBits(consensus);
+
+        consensus.powLimit =
+            uint256{"7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
+        consensus.nPowTargetTimespan = 600;
+        consensus.nPowTargetSpacing = 300;
+        consensus.fPowAllowMinDifficultyBlocks = true;
+        consensus.fPowNoRetargeting = true;
+        consensus.enforce_BIP94 = false;
+
+        // Regtest ONLY: one historical Scrypt block followed by RandomX.
+        consensus.randomx_activation_height = 2;
+        consensus.randomx_seed_epoch_length = 16;
+
+        consensus.nMinimumChainWork.SetNull();
+        consensus.defaultAssumeValid.SetNull();
+
+        // Distinct from TaoX mainnet.
+        pchMessageStart = {0x74, 0x61, 0x78, 0x52};
+        nDefaultPort = 31337;
+        nPruneAfterHeight = 1000;
+        m_assumed_blockchain_size = 1;
+        m_assumed_chain_state_size = 1;
+
+        genesis = CreateTAOGenesisBlock();
+
+        // Regtest-specific header. Preserve the genesis transaction
+        // construction but never reuse the mainnet genesis hash.
+        genesis.nTime = 1763856000;
+        genesis.nBits = 0x207fffff;
+        genesis.nNonce = 0;
+
+        // Deterministically find a valid Scrypt regtest genesis nonce.
+        while (!CheckProofOfWork(genesis.GetPoWHash(),
+                                 genesis.nBits, consensus)) {
+            if (genesis.nNonce == std::numeric_limits<uint32_t>::max())
+                throw std::runtime_error("TaoX regtest genesis nonce exhausted");
+            ++genesis.nNonce;
+        }
+
+        consensus.hashGenesisBlock = genesis.GetHash();
+
+        // Pinned TaoX RandomX regtest genesis, independently observed
+        // through the running node's getblockchaininfo and getblockhash RPCs.
+        const uint256 expected_regtest_genesis{
+            "3feecd2d848a559f804e7738b06cff4b9cfa64e274756854c2983918a89af1ec"
+        };
+
+        if (consensus.hashGenesisBlock != expected_regtest_genesis)
+            throw std::runtime_error(
+                "TaoX regtest genesis identity mismatch");
+
+        if (consensus.hashGenesisBlock ==
+            CChainParams::Main()->GetConsensus().hashGenesisBlock)
+            throw std::runtime_error(
+                "TaoX regtest genesis matches mainnet");
+
+        vSeeds.clear();
+        vFixedSeeds.clear();
+
+        base58Prefixes[PUBKEY_ADDRESS] = {111};
+        base58Prefixes[SCRIPT_ADDRESS] = {196};
+        base58Prefixes[SECRET_KEY] = {239};
+        base58Prefixes[EXT_PUBLIC_KEY] = {0x04, 0x35, 0x87, 0xCF};
+        base58Prefixes[EXT_SECRET_KEY] = {0x04, 0x35, 0x83, 0x94};
+        bech32_hrp = "taoxrt";
+
+        fDefaultConsistencyChecks = true;
+        m_is_mockable_chain = true;
+        m_assumeutxo_data.clear();
+        chainTxData = {1763856000, 1, 0.0};
+        m_headers_sync_params = {
+            .commitment_period = 673,
+            .redownload_buffer_size = 14460
+        };
+    }
+};
+
 } // namespace
 
 std::unique_ptr<const CChainParams> CChainParams::Main()
@@ -169,7 +267,7 @@ std::unique_ptr<const CChainParams> CChainParams::SigNet(const SigNetOptions&)
 
 std::unique_ptr<const CChainParams> CChainParams::RegTest(const RegTestOptions&)
 {
-    throw std::runtime_error("TAO regtest has not yet been defined for the migration workspace");
+    return std::make_unique<const CRegTestParams>();
 }
 
 std::vector<int> CChainParams::GetAvailableSnapshotHeights() const
@@ -181,5 +279,7 @@ std::optional<ChainType> GetNetworkForMagic(const MessageStartChars& message)
 {
     const auto mainnet = CChainParams::Main()->MessageStart();
     if (std::ranges::equal(message, mainnet)) return ChainType::MAIN;
+    const auto regtest = CChainParams::RegTest({})->MessageStart();
+    if (std::ranges::equal(message, regtest)) return ChainType::REGTEST;
     return std::nullopt;
 }

@@ -12,7 +12,7 @@
 void SetupChainParamsBaseOptions(ArgsManager& argsman)
 {
     argsman.AddArg("-chain=<chain>",
-                   "Use TAO main chain. Revival testnet is unresolved in this migration draft.",
+                   "Select TaoX main or isolated regtest chain.",
                    ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
 }
 
@@ -29,7 +29,10 @@ std::unique_ptr<CBaseChainParams> CreateBaseChainParams(const ChainType chain)
     if (chain == ChainType::MAIN) {
         return std::make_unique<CBaseChainParams>("", 31138);
     }
-    throw std::runtime_error("TAO Revival migration draft: only authoritative mainnet is enabled");
+    if (chain == ChainType::REGTEST) {
+        return std::make_unique<CBaseChainParams>("regtest", 31338);
+    }
+    throw std::runtime_error("Unsupported TaoX network");
 }
 
 void SelectBaseParams(const ChainType chain)

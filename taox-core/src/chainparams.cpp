@@ -21,6 +21,7 @@ const CChainParams& Params()
 std::unique_ptr<const CChainParams> CreateChainParams(const ArgsManager&, const ChainType chain)
 {
     if (chain == ChainType::MAIN) return CChainParams::Main();
+    if (chain == ChainType::REGTEST) return CChainParams::RegTest({});
     throw std::runtime_error(
         "TAO Revival migration draft: only authoritative mainnet is enabled");
 }
