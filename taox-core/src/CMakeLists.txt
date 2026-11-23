@@ -109,6 +109,17 @@ if(TAO_ENABLE_RANDOMX)
     xnuva::randomx_foundation
   )
 
+  # TaoX offline wrong-seed consensus-boundary fixture.
+  add_executable(tao-randomx-wrong-seed-test
+    tao/crypto/randomx_wrong_seed_test.cpp
+  )
+  target_link_libraries(tao-randomx-wrong-seed-test PRIVATE
+    core_interface
+    bitcoin_consensus
+    tao_randomx
+    xnuva::randomx_foundation
+  )
+
   add_executable(tao-randomx-selftest
     tao/crypto/randomx_selftest.cpp
   )
