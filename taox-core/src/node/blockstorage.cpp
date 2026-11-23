@@ -1140,10 +1140,20 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
             // Preserve historical Scrypt-only network reads.
             pow_hash = block.GetPoWHash();
         } else {
-            // A raw block with unknown ancestry cannot supply
-            // a verified RandomX seed at this interface.
-            LogError("TaoX disk read: missing RandomX block index context");
-            return false;
+            // TAOX_RAW_PARENT_CONTEXT_REPAIR
+            // Out-of-order import: the block may not yet be indexed,
+            // but its accepted parent can supply consensus context.
+            const CBlockIndex* parent =
+                LookupBlockIndex(block.hashPrevBlock);
+
+            if (!parent || !parent->phashBlock ||
+                !parent->IsValid(BLOCK_VALID_TREE)) {
+                LogError("TaoX disk read: missing verified RandomX parent");
+                return false;
+            }
+
+            pow_hash = taox::consensus::CalculateContextualPoWHash(
+                block, parent, GetConsensus());
         }
     }
 
