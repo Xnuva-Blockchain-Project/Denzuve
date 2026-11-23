@@ -83,11 +83,11 @@ target_link_libraries(bitcoin_consensus
 # Experimental TaoX hashing adapter: consumes the version-pinned shared
 # XNUVA RandomX foundation. OFF by default; never linked into node consensus.
 # This is a source-only development gate, not a hard-fork activation.
-option(TAO_EXPERIMENTAL_RANDOMX_HASHING
-  "Build isolated TaoX RandomX v2 hashing self-test (no consensus activation)"
-  OFF
+option(TAO_ENABLE_RANDOMX
+  "Build the pinned RandomX engine for TaoX consensus and mining"
+  ON
 )
-if(TAO_EXPERIMENTAL_RANDOMX_HASHING)
+if(TAO_ENABLE_RANDOMX)
   include(FetchContent)
   # Keep this exact audited commit until tests justify a controlled update.
   FetchContent_Declare(taox_shared_randomx_foundation
@@ -100,10 +100,10 @@ if(TAO_EXPERIMENTAL_RANDOMX_HASHING)
     message(FATAL_ERROR "Pinned shared RandomX foundation target unavailable")
   endif()
 
-  add_library(tao_randomx_experimental STATIC
+  add_library(tao_randomx STATIC
     tao/crypto/randomx.cpp
   )
-  target_link_libraries(tao_randomx_experimental PRIVATE
+  target_link_libraries(tao_randomx PRIVATE
     core_interface
     bitcoin_consensus
     xnuva::randomx_foundation
@@ -115,7 +115,7 @@ if(TAO_EXPERIMENTAL_RANDOMX_HASHING)
   target_link_libraries(tao-randomx-selftest PRIVATE
     core_interface
     bitcoin_consensus
-    tao_randomx_experimental
+    tao_randomx
     xnuva::randomx_foundation
   )
   # Hash vectors only. No node, mining RPC, wallet or production PoW path.
@@ -331,6 +331,15 @@ target_link_libraries(bitcoin_node
     $<TARGET_NAME_IF_EXISTS:libevent::pthreads>
     $<TARGET_NAME_IF_EXISTS:USDT::headers>
 )
+# RandomX must be linked into the actual node, not just
+# the standalone cryptographic self-test.
+if(TAO_ENABLE_RANDOMX)
+  target_link_libraries(bitcoin_node
+    PRIVATE
+      tao_randomx
+  )
+endif()
+
 if(WITH_EMBEDDED_ASMAP)
   target_compile_definitions(bitcoin_node PRIVATE ENABLE_EMBEDDED_ASMAP=1)
   include(TargetDataSources)

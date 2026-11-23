@@ -109,6 +109,12 @@ struct Params {
      * This prevents us from warning about the CSV and segwit activations. */
     int MinBIP9WarningHeight;
     std::array<BIP9Deployment,MAX_VERSION_BITS_DEPLOYMENTS> vDeployments;
+    // TaoX consensus-defined RandomX transition.
+    // -1 means no activation on this network.
+    // A positive height enables RandomX from that block onward.
+    int randomx_activation_height{-1};
+    int randomx_seed_epoch_length{0};
+
     /** Proof of work parameters */
     uint256 powLimit;
     bool fPowAllowMinDifficultyBlocks;

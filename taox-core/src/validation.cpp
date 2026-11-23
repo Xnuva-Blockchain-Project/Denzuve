@@ -3840,13 +3840,31 @@ void ChainstateManager::ReceivedBlockTransactions(const CBlock& block, CBlockInd
 
 static bool CheckBlockHeader(const CBlockHeader& block, BlockValidationState& state, const Consensus::Params& consensusParams, bool fCheckPOW = true)
 {
-    // Check historical Scrypt PoW through the modular dispatcher.
-    // Experimental integration only: RandomX remains disabled.
+    // The selected PoW algorithm depends on block height and parent
+    // ancestry. A context-free Scrypt check must not reject RandomX.
+    //
+    // Preserve the historical Scrypt precheck on networks without
+    // a RandomX transition. Transition-enabled networks perform
+    // algorithm-specific verification in ContextualCheckBlockHeader.
     if (fCheckPOW) {
-        const auto pow_hash = taox::consensus::CalculatePoWHash(
-            block, taox::consensus::PoWAlgorithm::Scrypt, std::nullopt);
-        if (!pow_hash || !CheckProofOfWork(*pow_hash, block.nBits, consensusParams))
-            return state.Invalid(BlockValidationResult::BLOCK_INVALID_HEADER, "high-hash", "proof of work failed");
+        if (consensusParams.randomx_activation_height == -1) {
+            const auto pow_hash = taox::consensus::CalculatePoWHash(
+                block, taox::consensus::PoWAlgorithm::Scrypt,
+                std::nullopt);
+
+            if (!pow_hash ||
+                !CheckProofOfWork(*pow_hash, block.nBits, consensusParams))
+                return state.Invalid(
+                    BlockValidationResult::BLOCK_INVALID_HEADER,
+                    "high-hash", "historical Scrypt proof of work failed");
+        } else {
+            // Check target encoding and powLimit before contextual
+            // validation. An all-zero hash passes a valid target.
+            if (!CheckProofOfWork(uint256{}, block.nBits, consensusParams))
+                return state.Invalid(
+                    BlockValidationResult::BLOCK_INVALID_HEADER,
+                    "bad-pow-target", "invalid proof of work target");
+        }
     }
 
     return true;
@@ -4118,7 +4136,7 @@ static bool ContextualCheckBlockHeader(const CBlockHeader& block, BlockValidatio
     // The selector remains Scrypt-only; RandomX is disabled.
     const auto contextual_pow_hash =
         taox::consensus::CalculateContextualPoWHash(
-            block, pindexPrev);
+            block, pindexPrev, consensusParams);
 
     if (!contextual_pow_hash ||
         !CheckProofOfWork(*contextual_pow_hash,

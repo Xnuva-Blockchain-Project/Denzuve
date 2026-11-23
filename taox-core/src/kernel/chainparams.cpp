@@ -92,6 +92,9 @@ public:
 
         consensus.powLimit =
             uint256{"00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
+        // Mainnet activation requires a separately approved height.
+        consensus.randomx_activation_height = -1;
+        consensus.randomx_seed_epoch_length = 0;
         consensus.nPowTargetTimespan = 10 * 60;
         consensus.nPowTargetSpacing = 5 * 60;
         consensus.fPowAllowMinDifficultyBlocks = false;

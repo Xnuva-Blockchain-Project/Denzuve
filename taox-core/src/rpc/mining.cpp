@@ -24,6 +24,8 @@
 #include <node/miner.h>
 #include <node/warnings.h>
 #include <policy/ephemeral_policy.h>
+#include <tao/consensus/pow_algorithm.h>
+#include <tao/crypto/randomx.h>
 #include <pow.h>
 #include <rpc/blockchain.h>
 #include <rpc/mining.h>
@@ -139,7 +141,75 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
 
-    while (max_tries > 0 && block.nNonce < std::numeric_limits<uint32_t>::max() && !CheckProofOfWork(block.GetHash(), block.nBits, chainman.GetConsensus()) && !chainman.m_interrupt) {
+    // Select the algorithm and seed from the candidate's own ancestry.
+    // Resolve them under cs_main; do not hold the lock while hashing.
+    taox::consensus::PoWAlgorithm algorithm;
+    std::optional<uint256> randomx_seed;
+    {
+        LOCK(cs_main);
+        const CBlockIndex* parent = chainman.ActiveChain().Tip();
+
+        if (!parent || !parent->phashBlock ||
+            block.hashPrevBlock != parent->GetBlockHash()) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR,
+                               "Mining candidate parent is not the active tip");
+        }
+
+        const int height = parent->nHeight + 1;
+        const auto selected = taox::consensus::SelectPoWAlgorithm(
+            height, chainman.GetConsensus());
+
+        if (!selected) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR,
+                               "Invalid TaoX mining algorithm policy");
+        }
+        algorithm = *selected;
+
+        if (algorithm == taox::consensus::PoWAlgorithm::RandomX) {
+            const auto seed_height = taox::consensus::RandomXSeedHeight(
+                height, chainman.GetConsensus());
+
+            if (!seed_height || *seed_height > parent->nHeight) {
+                throw JSONRPCError(RPC_INTERNAL_ERROR,
+                                   "Invalid RandomX seed height");
+            }
+
+            const CBlockIndex* ancestor =
+                parent->GetAncestor(static_cast<int>(*seed_height));
+
+            if (!ancestor || !ancestor->phashBlock ||
+                !ancestor->IsValid(BLOCK_VALID_TREE)) {
+                throw JSONRPCError(RPC_INTERNAL_ERROR,
+                                   "RandomX seed ancestor unavailable");
+            }
+            randomx_seed = ancestor->GetBlockHash();
+        }
+    }
+
+    std::unique_ptr<tao::experimental::RandomXLightHasher> randomx_hasher;
+
+    if (randomx_seed) {
+        const std::span<const unsigned char> seed_bytes{
+            randomx_seed->data(), randomx_seed->size()
+        };
+        randomx_hasher =
+            std::make_unique<tao::experimental::RandomXLightHasher>(
+                std::as_bytes(seed_bytes));
+    }
+
+    while (max_tries > 0 &&
+           block.nNonce < std::numeric_limits<uint32_t>::max() &&
+           !chainman.m_interrupt) {
+        const uint256 pow_hash =
+            algorithm == taox::consensus::PoWAlgorithm::RandomX
+                ? randomx_hasher->HashHeader(block)
+                : block.GetPoWHash();
+
+        if (CheckProofOfWork(pow_hash, block.nBits,
+                             chainman.GetConsensus())) {
+            break;
+        }
+
         ++block.nNonce;
         --max_tries;
     }
