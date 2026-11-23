@@ -17,6 +17,8 @@
 #include <kernel/notifications_interface.h>
 #include <kernel/types.h>
 #include <pow.h>
+#include <tao/consensus/pow_hash_dispatch.h>
+#include <tao/consensus/pow_contextual_hash.h>
 #include <primitives/block.h>
 #include <primitives/transaction.h>
 #include <random.h>
@@ -53,6 +55,7 @@
 #include <stdexcept>
 #include <system_error>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace kernel {
 static constexpr uint8_t DB_BLOCK_FILES{'f'};
@@ -145,10 +148,8 @@ bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, s
                 pindexNew->nStatus        = diskindex.nStatus;
                 pindexNew->nTx            = diskindex.nTx;
 
-                if (!CheckProofOfWork(pindexNew->GetBlockHeader().GetPoWHash(), pindexNew->nBits, consensusParams)) {
-                    LogError("%s: CheckProofOfWork failed: %s\n", __func__, pindexNew->ToString());
-                    return false;
-                }
+                // PoW is checked after all index entries are
+                // reconstructed, in parent-before-child order.
 
                 pcursor->Next();
             } else {
@@ -456,6 +457,9 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
     std::sort(vSortedByHeight.begin(), vSortedByHeight.end(),
               CBlockIndexHeightOnlyComparator());
 
+    // TAOX_STARTUP_POW_VERIFICATION
+    // Verify ancestry and PoW before accepting chainwork.
+    std::unordered_set<const CBlockIndex*> verified_indices;
     CBlockIndex* previous_index{nullptr};
     for (CBlockIndex* pindex : vSortedByHeight) {
         if (m_interrupt) return false;
@@ -463,6 +467,58 @@ bool BlockManager::LoadBlockIndex(const std::optional<uint256>& snapshot_blockha
             LogError("%s: block index is non-contiguous, index of height %d missing\n", __func__, previous_index->nHeight + 1);
             return false;
         }
+        const CBlockIndex* parent = pindex->pprev;
+        const auto header = pindex->GetBlockHeader();
+
+        // Stored block identifiers must match their headers.
+        if (header.GetHash() != pindex->GetBlockHash()) {
+            LogError("TaoX startup: block identifier mismatch at height %d", pindex->nHeight);
+            return false;
+        }
+
+        if (pindex->nHeight == 0) {
+            if (parent || pindex->GetBlockHash() != GetConsensus().hashGenesisBlock) {
+                LogError("TaoX startup: invalid genesis index");
+                return false;
+            }
+        } else {
+            if (!parent || parent->nHeight != pindex->nHeight - 1 ||
+                !verified_indices.contains(parent) ||
+                header.hashPrevBlock != parent->GetBlockHash()) {
+                LogError("TaoX startup: invalid ancestry at height %d", pindex->nHeight);
+                return false;
+            }
+        }
+
+        const auto algorithm = taox::consensus::SelectPoWAlgorithm(
+            pindex->nHeight, GetConsensus());
+        if (!algorithm) return false;
+
+        std::optional<uint256> seed;
+        if (*algorithm == taox::consensus::PoWAlgorithm::RandomX) {
+            const auto seed_height = taox::consensus::RandomXSeedHeight(
+                pindex->nHeight, GetConsensus());
+            if (!seed_height || !parent ||
+                *seed_height > parent->nHeight) return false;
+
+            const CBlockIndex* ancestor = parent->GetAncestor(
+                static_cast<int>(*seed_height));
+            if (!ancestor || !verified_indices.contains(ancestor)) {
+                LogError("TaoX startup: missing verified RandomX seed at height %d", pindex->nHeight);
+                return false;
+            }
+            seed = ancestor->GetBlockHash();
+        }
+
+        const auto pow_hash = taox::consensus::CalculatePoWHash(
+            header, algorithm, seed);
+        if (!pow_hash ||
+            !CheckProofOfWork(*pow_hash, pindex->nBits, GetConsensus())) {
+            LogError("TaoX startup: contextual PoW failed at height %d", pindex->nHeight);
+            return false;
+        }
+
+        verified_indices.insert(pindex);
         previous_index = pindex;
         pindex->nChainWork = (pindex->pprev ? pindex->pprev->nChainWork : 0) + GetBlockProof(*pindex);
         pindex->nTimeMax = (pindex->pprev ? std::max(pindex->pprev->nTimeMax, pindex->nTime) : pindex->nTime);
@@ -1054,7 +1110,45 @@ bool BlockManager::ReadBlock(CBlock& block, const FlatFilePos& pos, const std::o
     const auto block_hash{block.GetHash()};
 
     // Check the header
-    if (!CheckProofOfWork(block.GetPoWHash(), block.nBits, GetConsensus())) {
+    // TAOX_CONTEXTUAL_DISK_READ
+    // Known indexed blocks require the consensus-selected PoW.
+    // Unknown RandomX ancestry must fail closed.
+    std::optional<uint256> pow_hash;
+    {
+        LOCK(cs_main);
+        const CBlockIndex* index = LookupBlockIndex(block_hash);
+
+        if (index) {
+            if (index->nBits != block.nBits) {
+                LogError("TaoX disk read: indexed difficulty mismatch");
+                return false;
+            }
+
+            if (index->nHeight == 0) {
+                if (index->pprev ||
+                    block_hash != GetConsensus().hashGenesisBlock) {
+                    LogError("TaoX disk read: invalid genesis");
+                    return false;
+                }
+                pow_hash = block.GetPoWHash();
+            } else {
+                pow_hash = taox::consensus::CalculateContextualPoWHash(
+                    block, index->pprev, GetConsensus());
+            }
+        } else if (GetConsensus().randomx_activation_height == -1 ||
+                   block_hash == GetConsensus().hashGenesisBlock) {
+            // Preserve historical Scrypt-only network reads.
+            pow_hash = block.GetPoWHash();
+        } else {
+            // A raw block with unknown ancestry cannot supply
+            // a verified RandomX seed at this interface.
+            LogError("TaoX disk read: missing RandomX block index context");
+            return false;
+        }
+    }
+
+    if (!pow_hash ||
+        !CheckProofOfWork(*pow_hash, block.nBits, GetConsensus())) {
         LogError("Errors in block header at %s while reading block", pos.ToString());
         return false;
     }
