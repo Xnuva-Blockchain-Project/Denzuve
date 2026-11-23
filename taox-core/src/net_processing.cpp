@@ -2646,8 +2646,55 @@ bool PeerManagerImpl::CheckHeadersPoW(
         return false;
     }
 
-    // Experimental connected-header verification only.
-    // Unknown-parent presynchronisation remains unsupported.
+    // A legitimate low-work presync session can have a verified
+    // parent that has not yet entered the global block index.
+    // Authenticate the entire batch against this peer's own
+    // session before considering the ordinary indexed path.
+    //
+    // Do not hold cs_main while acquiring this peer mutex.
+    {
+        LOCK(peer.m_headers_sync_mutex);
+
+        if (peer.m_headers_sync &&
+            peer.m_headers_sync->GetState() ==
+                HeadersSyncState::State::PRESYNC &&
+            peer.m_headers_sync->
+                IsExpectedPresyncContinuation(headers)) {
+
+            if (!peer.m_headers_sync->
+                    VerifyIncomingPresyncPoW(headers)) {
+                Misbehaving(
+                    peer,
+                    "invalid contextual presync proof of work");
+                return false;
+            }
+
+            return true;
+        }
+
+        // REDOWNLOAD begins again from the original trusted
+        // chain anchor. Its seed history is independent of
+        // PRESYNC and advances only after verified batches.
+        if (peer.m_headers_sync &&
+            peer.m_headers_sync->GetState() ==
+                HeadersSyncState::State::REDOWNLOAD &&
+            peer.m_headers_sync->
+                IsExpectedRedownloadContinuation(headers)) {
+
+            if (!peer.m_headers_sync->
+                    VerifyIncomingRedownloadPoW(headers)) {
+                Misbehaving(
+                    peer,
+                    "invalid contextual redownload proof of work");
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    // Ordinary connected-header verification remains unchanged.
+    // Unrelated announcements do not inherit session trust.
     LOCK(cs_main);
 
     const CBlockIndex* anchor =

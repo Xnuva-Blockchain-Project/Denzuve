@@ -479,3 +479,18 @@ endif()
 if(BUILD_FUZZ_BINARY)
   add_subdirectory(test/fuzz)
 endif()
+
+# TaoX experimental two-phase RandomX header-sync regression.
+# Explicit target only; not installed or included in default builds.
+if(BUILD_DAEMON)
+  add_executable(taox-headerssync-regression EXCLUDE_FROM_ALL
+    test/taox_headerssync_regression.cpp
+    test/taox_regression_translation.cpp
+  )
+
+  target_link_libraries(taox-headerssync-regression
+    core_interface
+    bitcoin_node
+    $<TARGET_NAME_IF_EXISTS:bitcoin_wallet>
+  )
+endif()

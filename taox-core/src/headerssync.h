@@ -11,6 +11,7 @@
 #include <net.h>
 #include <primitives/block.h>
 #include <uint256.h>
+#include <tao/consensus/pow_seed_tracker.h>
 #include <util/bitdeque.h>
 #include <util/hasher.h>
 
@@ -119,6 +120,27 @@ public:
     /** Return the current state of our download */
     State GetState() const { return m_download_state; }
 
+    // Check an incoming experimental presync batch against this
+    // peer's authenticated context. Does not advance session state.
+    // Caller must hold the peer's headers-sync mutex.
+    // Does this batch connect to our current PRESYNC tip?
+    bool IsExpectedPresyncContinuation(
+        std::span<const CBlockHeader> headers) const;
+
+    bool VerifyIncomingPresyncPoW(
+        std::span<const CBlockHeader> headers) const;
+
+    // True only for a continuation of this REDOWNLOAD
+    // session's current expected header tip.
+    bool IsExpectedRedownloadContinuation(
+        std::span<const CBlockHeader> headers) const;
+
+    // Genuine contextual PoW verification against a copy
+    // of REDOWNLOAD state. Does not mutate the session.
+    bool VerifyIncomingRedownloadPoW(
+        std::span<const CBlockHeader> headers) const;
+
+
     /** Return the height reached during the PRESYNC phase */
     int64_t GetPresyncHeight() const { return m_current_height; }
 
@@ -210,6 +232,20 @@ private:
     std::vector<CBlockHeader> PopHeadersReadyForAcceptance();
 
 private:
+    // Experimental RandomX presync seed context.
+    // Owned by this session and cleared on finalisation.
+    // Original authenticated context, retained across phases.
+    taox::consensus::RandomXSeedTracker
+        m_taox_anchor_seed_tracker;
+
+    // First-phase verification context.
+    taox::consensus::RandomXSeedTracker m_taox_seed_tracker;
+
+    // Independent second-phase verification context.
+    taox::consensus::RandomXSeedTracker
+        m_taox_redownload_seed_tracker;
+    bool m_taox_seed_context_ready{false};
+
     /** NodeId of the peer (used for log messages) **/
     const NodeId m_id;
 

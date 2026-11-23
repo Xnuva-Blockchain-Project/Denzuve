@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <headerssync.h>
+#include <tao/consensus/pow_batch_validation.h>
+#include <optional>
 
 #include <logging.h>
 #include <pow.h>
@@ -42,6 +44,50 @@ HeadersSyncState::HeadersSyncState(NodeId id,
                                        + MAX_FUTURE_BLOCK_TIME};
     m_max_commitments = 6 * max_seconds_since_start / m_params.commitment_period;
 
+    // Initialise experimental RandomX seed context from the
+    // already-validated chain start. Never accept a peer-supplied
+    // seed directly.
+    if (m_consensus_params.randomx_activation_height != -1) {
+        m_taox_seed_tracker.Reset();
+
+        if (chain_start.IsValid(BLOCK_VALID_TREE) &&
+            chain_start.nHeight >= 0) {
+            const int next_height = chain_start.nHeight + 1;
+            const auto seed_height =
+                taox::consensus::RandomXSeedHeight(
+                    next_height, m_consensus_params);
+
+            if (seed_height) {
+                const CBlockIndex* ancestor =
+                    chain_start.GetAncestor(
+                        static_cast<int>(*seed_height));
+
+                if (ancestor &&
+                    ancestor->IsValid(BLOCK_VALID_TREE)) {
+                    m_taox_seed_context_ready =
+                        m_taox_seed_tracker
+                            .SetVerifiedAnchorAndAncestorSeed(
+                                chain_start.nHeight,
+                                chain_start.GetBlockHash(),
+                                *seed_height,
+                                ancestor->GetBlockHash(),
+                                m_consensus_params);
+                }
+            } else if (next_height <
+                       m_consensus_params.randomx_activation_height) {
+                m_taox_seed_tracker.SetVerifiedAnchor(
+                    chain_start.nHeight,
+                    chain_start.GetBlockHash());
+
+                m_taox_seed_context_ready = true;
+            }
+        }
+    }
+
+    if (m_taox_seed_context_ready) {
+        m_taox_anchor_seed_tracker = m_taox_seed_tracker;
+    }
+
     LogDebug(BCLog::NET, "Initial headers sync started with peer=%d: height=%i, max_commitments=%i, min_work=%s\n", m_id, m_current_height, m_max_commitments, m_minimum_required_work.ToString());
 }
 
@@ -58,6 +104,11 @@ void HeadersSyncState::Finalize()
     m_redownload_buffer_first_prev_hash.SetNull();
     m_process_all_remaining_headers = false;
     m_current_height = 0;
+
+    m_taox_seed_tracker.Reset();
+    m_taox_anchor_seed_tracker.Reset();
+    m_taox_redownload_seed_tracker.Reset();
+    m_taox_seed_context_ready = false;
 
     m_download_state = State::FINAL;
 }
@@ -101,7 +152,30 @@ HeadersSyncState::ProcessingResult HeadersSyncState::ProcessNextHeaders(
         // gets big enough (meaning that we've checked enough commitments),
         // we'll return a batch of headers to the caller for processing.
         ret.success = true;
-        for (const auto& hdr : received_headers) {
+
+        std::optional<taox::consensus::RandomXSeedTracker>
+            redownload_candidate;
+
+        if (m_consensus_params.randomx_activation_height != -1) {
+            if (!m_taox_seed_context_ready) {
+                ret.success = false;
+            } else {
+                redownload_candidate.emplace(
+                    m_taox_redownload_seed_tracker);
+
+                ret.success =
+                    taox::consensus::ValidateContextualPoWBatch(
+                        *redownload_candidate,
+                        received_headers,
+                        m_consensus_params);
+            }
+        }
+
+        // Do not modify REDOWNLOAD's commitments, work or
+        // header buffer unless the complete PoW batch passes.
+        for (const auto& hdr : ret.success ?
+                 received_headers :
+                 std::span<const CBlockHeader>{}) {
             if (!ValidateAndStoreRedownloadedHeader(hdr)) {
                 // Something went wrong -- the peer gave us an unexpected chain.
                 // We could consider looking at the reason for failure and
@@ -109,6 +183,11 @@ HeadersSyncState::ProcessingResult HeadersSyncState::ProcessNextHeaders(
                 ret.success = false;
                 break;
             }
+        }
+
+        if (ret.success && redownload_candidate) {
+            m_taox_redownload_seed_tracker =
+                *redownload_candidate;
         }
 
         if (ret.success) {
@@ -136,6 +215,59 @@ HeadersSyncState::ProcessingResult HeadersSyncState::ProcessNextHeaders(
     return ret;
 }
 
+bool HeadersSyncState::IsExpectedPresyncContinuation(
+    std::span<const CBlockHeader> headers) const
+{
+    return m_download_state == State::PRESYNC &&
+           !headers.empty() &&
+           headers.front().hashPrevBlock ==
+               m_last_header_received.GetHash();
+}
+
+bool HeadersSyncState::VerifyIncomingPresyncPoW(
+    std::span<const CBlockHeader> headers) const
+{
+    if (!IsExpectedPresyncContinuation(headers) ||
+        !m_taox_seed_context_ready ||
+        m_consensus_params.randomx_activation_height == -1) {
+        return false;
+    }
+
+    // Atomic verification against a copy. Never change this
+    // session's seed, commitments, height, or chain work here.
+    auto candidate = m_taox_seed_tracker;
+
+    return taox::consensus::ValidateContextualPoWBatch(
+        candidate, headers, m_consensus_params);
+}
+
+bool HeadersSyncState::IsExpectedRedownloadContinuation(
+    std::span<const CBlockHeader> headers) const
+{
+    return m_download_state == State::REDOWNLOAD &&
+           !headers.empty() &&
+           headers.front().hashPrevBlock ==
+               m_redownload_buffer_last_hash;
+}
+
+bool HeadersSyncState::VerifyIncomingRedownloadPoW(
+    std::span<const CBlockHeader> headers) const
+{
+    if (!IsExpectedRedownloadContinuation(headers) ||
+        !m_taox_seed_context_ready ||
+        m_consensus_params.randomx_activation_height == -1) {
+        return false;
+    }
+
+    // Verify without advancing the session. The actual
+    // REDOWNLOAD processing independently checks PoW,
+    // commitments, difficulty transitions and work.
+    auto candidate = m_taox_redownload_seed_tracker;
+
+    return taox::consensus::ValidateContextualPoWBatch(
+        candidate, headers, m_consensus_params);
+}
+
 bool HeadersSyncState::ValidateAndStoreHeadersCommitments(std::span<const CBlockHeader> headers)
 {
     // The caller should not give us an empty set of headers.
@@ -156,10 +288,46 @@ bool HeadersSyncState::ValidateAndStoreHeadersCommitments(std::span<const CBlock
 
     // If it does connect, (minimally) validate and occasionally store
     // commitments.
+    // Experimental RandomX: validate the complete incoming batch
+    // against a temporary verified seed context before any
+    // presync commitments or chain work are credited.
+    //
+    // The candidate is committed only after all presync checks
+    // succeed. The mainnet Scrypt-only path is unchanged.
+    std::optional<taox::consensus::RandomXSeedTracker>
+        verified_candidate;
+
+    if (m_consensus_params.randomx_activation_height != -1) {
+        if (!m_taox_seed_context_ready) {
+            LogDebug(
+                BCLog::NET,
+                "TaoX presync missing authenticated seed context\\n");
+            return false;
+        }
+
+        verified_candidate.emplace(m_taox_seed_tracker);
+
+        if (!taox::consensus::ValidateContextualPoWBatch(
+                *verified_candidate,
+                headers,
+                m_consensus_params)) {
+            LogDebug(
+                BCLog::NET,
+                "TaoX presync rejected contextual PoW batch\\n");
+            return false;
+        }
+    }
+
     for (const auto& hdr : headers) {
         if (!ValidateAndProcessSingleHeader(hdr)) {
             return false;
         }
+    }
+
+    // All contextual PoW and presync checks passed.
+    // Commit the verified seed state atomically.
+    if (verified_candidate) {
+        m_taox_seed_tracker = *verified_candidate;
     }
 
     if (m_current_chain_work >= m_minimum_required_work) {
@@ -168,6 +336,11 @@ bool HeadersSyncState::ValidateAndStoreHeadersCommitments(std::span<const CBlock
         m_redownload_buffer_first_prev_hash = m_chain_start.GetBlockHash();
         m_redownload_buffer_last_hash = m_chain_start.GetBlockHash();
         m_redownload_chain_work = m_chain_start.nChainWork;
+        if (m_taox_seed_context_ready) {
+            m_taox_redownload_seed_tracker =
+                m_taox_anchor_seed_tracker;
+        }
+
         m_download_state = State::REDOWNLOAD;
         LogDebug(BCLog::NET, "Initial headers sync transition with peer=%d: reached sufficient work at height=%i, redownloading from height=%i\n", m_id, m_current_height, m_redownload_buffer_last_height);
     }
