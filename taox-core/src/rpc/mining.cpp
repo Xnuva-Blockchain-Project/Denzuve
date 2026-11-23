@@ -197,27 +197,32 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
                 std::as_bytes(seed_bytes));
     }
 
-    while (max_tries > 0 &&
-           block.nNonce < std::numeric_limits<uint32_t>::max() &&
-           !chainman.m_interrupt) {
+    bool found_solution = false;
+
+    while (max_tries > 0 && !chainman.m_interrupt) {
         const uint256 pow_hash =
             algorithm == taox::consensus::PoWAlgorithm::RandomX
                 ? randomx_hasher->HashHeader(block)
                 : block.GetPoWHash();
 
+        --max_tries;
+
         if (CheckProofOfWork(pow_hash, block.nBits,
                              chainman.GetConsensus())) {
+            found_solution = true;
+            break;
+        }
+
+        if (block.nNonce == std::numeric_limits<uint32_t>::max()) {
             break;
         }
 
         ++block.nNonce;
-        --max_tries;
     }
-    if (max_tries == 0 || chainman.m_interrupt) {
+
+    // Never report an unmined candidate as a successful block.
+    if (!found_solution || chainman.m_interrupt) {
         return false;
-    }
-    if (block.nNonce == std::numeric_limits<uint32_t>::max()) {
-        return true;
     }
 
     block_out = std::make_shared<const CBlock>(std::move(block));
