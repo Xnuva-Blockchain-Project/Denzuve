@@ -284,6 +284,105 @@ void RunInvalidPresyncRegression()
 }
 
 
+
+void RunInvalidRedownloadRegression()
+{
+    std::cout << "\n=== INVALID RANDOMX REDOWNLOAD ===\n";
+
+    const CBlockHeader genesis = Decode(
+        "010000000000000000000000000000000000000000000000000000000000000000000000621cfbc1985872aa3745237d99063212f9e658322f00648165386ecfac588dcb804e2269ffff7f2002000000");
+
+    const std::vector<CBlockHeader> blocks{
+        Decode("00000020ecf19aa8183998c254687574e264fa9c4bff6cb038774e809f558a842dcdee3fdd1c2edf8ac9c01a8c170cbd5d0be7cbe14a9c91f8ecfd0f2f442756fb438a4b4b06046bffff7f2000000000"),
+        Decode("000000206a5a6193a90478e6921249bfa01eb1306132af6854e69c62b7e901cf1b939fcfef0b60d8984e0549cec4af78b4a3c9c070735c0adbf6eb3968bc61ba0b210196f806046bffff7f2003000000"),
+        Decode("000000207849ca5a2243915aad6fd919a22499294628d7d87a80d7e3aa738c2cfc545fda1384bfcfb0e3783878421db81e4fc8db8d89a73cd89bdcb4e7a2d571043361b3700c046bffff7f2004000000")
+    };
+
+    Consensus::Params consensus{};
+    consensus.randomx_activation_height = 2;
+    consensus.randomx_seed_epoch_length = 16;
+    consensus.powLimit = uint256{
+        "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"};
+    consensus.fPowAllowMinDifficultyBlocks = true;
+    consensus.fPowNoRetargeting = true;
+
+    const HeadersSyncParams settings{
+        .commitment_period = 1,
+        .redownload_buffer_size = 3
+    };
+
+    CBlockHeader invalid = blocks[1];
+    invalid.nNonce = 5;
+
+    Require(
+        invalid.hashPrevBlock == blocks[0].GetHash(),
+        "Invalid RandomX header connects to valid block 1");
+
+    LOCK(cs_main);
+
+    CBlockIndex anchor(genesis);
+    const uint256 genesis_hash = genesis.GetHash();
+
+    anchor.phashBlock = &genesis_hash;
+    anchor.nHeight = 0;
+    anchor.nChainWork = GetBlockProof(genesis);
+
+    Require(
+        anchor.RaiseValidity(BLOCK_VALID_TREE),
+        "REDOWNLOAD test anchor authenticated");
+
+    arith_uint256 threshold = anchor.nChainWork;
+
+    for (const auto& block : blocks) {
+        threshold += GetBlockProof(block);
+    }
+
+    HeadersSyncState sync(
+        26, consensus, settings, anchor, threshold);
+
+    for (const auto& block : blocks) {
+        const auto result = sync.ProcessNextHeaders(
+            std::span<const CBlockHeader>(&block, 1),
+            true);
+
+        Require(
+            result.success,
+            "Valid PRESYNC header accepted");
+    }
+
+    Require(
+        sync.GetState() == HeadersSyncState::State::REDOWNLOAD,
+        "Valid PRESYNC reached REDOWNLOAD");
+
+    const auto first = sync.ProcessNextHeaders(
+        std::span<const CBlockHeader>(&blocks[0], 1),
+        true);
+
+    Require(
+        first.success && first.request_more,
+        "Valid Scrypt REDOWNLOAD header accepted");
+
+    Require(
+        first.pow_validated_headers.empty(),
+        "No headers prematurely released");
+
+    const auto rejected = sync.ProcessNextHeaders(
+        std::span<const CBlockHeader>(&invalid, 1),
+        true);
+
+    Require(
+        !rejected.success,
+        "Invalid RandomX REDOWNLOAD header rejected");
+
+    Require(
+        rejected.pow_validated_headers.empty(),
+        "Invalid REDOWNLOAD released no headers");
+
+    Require(
+        sync.GetState() == HeadersSyncState::State::FINAL,
+        "Invalid REDOWNLOAD session finalised");
+}
+
 void RunInterruptedPresyncRegression()
 {
     std::cout << "\n=== INTERRUPTED PRESYNC ===\n";
@@ -688,6 +787,7 @@ int main()
     try {
         RunTwoPhaseRegression();
         RunInvalidPresyncRegression();
+        RunInvalidRedownloadRegression();
         RunInterruptedPresyncRegression();
         RunCommitmentMismatchRegression();
         RunSeedBoundaryRegression();
