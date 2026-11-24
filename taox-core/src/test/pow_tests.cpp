@@ -5,6 +5,7 @@
 #include <chain.h>
 #include <chainparams.h>
 #include <pow.h>
+#include <tao/consensus/pow_algorithm.h>
 #include <test/util/random.h>
 #include <test/util/common.h>
 #include <test/util/setup_common.h>
@@ -209,6 +210,83 @@ BOOST_AUTO_TEST_CASE(ChainParams_TESTNET4_sanity)
 BOOST_AUTO_TEST_CASE(ChainParams_SIGNET_sanity)
 {
     BOOST_CHECK_THROW(sanity_check_chainparams(*m_node.args, ChainType::SIGNET), std::runtime_error);
+}
+
+
+// TaoX experimental activation policy. This fixture does not enable mainnet.
+BOOST_AUTO_TEST_CASE(taox_randomx_activation_boundary)
+{
+    auto params = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+
+    // The production setting remains disabled.
+    BOOST_CHECK_EQUAL(params.randomx_activation_height, -1);
+
+    params.randomx_activation_height = 6000;
+    params.randomx_seed_epoch_length = 16;
+
+    using taox::consensus::PoWAlgorithm;
+    using taox::consensus::SelectPoWAlgorithm;
+    using taox::consensus::RandomXSeedHeight;
+
+    BOOST_REQUIRE(SelectPoWAlgorithm(5999, params));
+    BOOST_CHECK(*SelectPoWAlgorithm(5999, params) == PoWAlgorithm::Scrypt);
+
+    BOOST_REQUIRE(SelectPoWAlgorithm(6000, params));
+    BOOST_CHECK(*SelectPoWAlgorithm(6000, params) == PoWAlgorithm::RandomX);
+
+    BOOST_CHECK(!RandomXSeedHeight(5999, params));
+
+    for (int height : {6000, 6001, 6015}) {
+        BOOST_REQUIRE(RandomXSeedHeight(height, params));
+        BOOST_CHECK_EQUAL(*RandomXSeedHeight(height, params), 5999);
+    }
+
+    BOOST_REQUIRE(RandomXSeedHeight(6016, params));
+    BOOST_CHECK_EQUAL(*RandomXSeedHeight(6016, params), 6015);
+
+    BOOST_REQUIRE(RandomXSeedHeight(6032, params));
+    BOOST_CHECK_EQUAL(*RandomXSeedHeight(6032, params), 6031);
+}
+
+BOOST_AUTO_TEST_CASE(taox_randomx_difficulty_continuity)
+{
+    auto params = CreateChainParams(*m_node.args, ChainType::MAIN)->GetConsensus();
+
+    params.randomx_activation_height = 6000;
+    params.randomx_seed_epoch_length = 16;
+
+    BOOST_REQUIRE_EQUAL(params.DifficultyAdjustmentInterval(), 2);
+    BOOST_CHECK(!params.fPowNoRetargeting);
+
+    // Artificial, isolated chain indexes: no real blocks or wallet data.
+    CBlockIndex blocks[5];
+
+    for (int i = 0; i < 5; ++i) {
+        blocks[i].nHeight = 5997 + i;
+        blocks[i].nTime = 1800000000 + 300 * i;
+        blocks[i].nBits = 0x1e01103e;
+        blocks[i].pprev = i ? &blocks[i - 1] : nullptr;
+    }
+
+    CBlockHeader candidate;
+
+    // Height 6000: first RandomX block and retarget boundary.
+    candidate.nTime = blocks[2].nTime + 300;
+    BOOST_CHECK_EQUAL(
+        GetNextWorkRequired(&blocks[2], &candidate, params),
+        0x1e01103eU);
+
+    // Height 6001: RandomX continues, without retarget.
+    candidate.nTime = blocks[3].nTime + 300;
+    BOOST_CHECK_EQUAL(
+        GetNextWorkRequired(&blocks[3], &candidate, params),
+        0x1e01103eU);
+
+    // Height 6002: next two-block retarget boundary.
+    candidate.nTime = blocks[4].nTime + 300;
+    BOOST_CHECK_EQUAL(
+        GetNextWorkRequired(&blocks[4], &candidate, params),
+        0x1e01103eU);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
