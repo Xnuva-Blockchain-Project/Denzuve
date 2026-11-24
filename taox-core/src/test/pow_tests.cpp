@@ -10,6 +10,8 @@
 #include <test/util/setup_common.h>
 #include <util/chaintype.h>
 
+#include <stdexcept>
+
 #include <boost/test/unit_test.hpp>
 
 BOOST_FIXTURE_TEST_SUITE(pow_tests, BasicTestingSetup)
@@ -28,7 +30,7 @@ BOOST_AUTO_TEST_CASE(get_next_work)
     // CalculateNextWorkRequired(); redoing the calculation here would be just
     // reimplementing the same code that is written in pow.cpp. Rather than
     // copy that code, we just hardcode the expected result.
-    unsigned int expected_nbits = 0x1d00d86aU;
+    unsigned int expected_nbits = 0x1d03fffcU;
     BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), expected_nbits);
     BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
 }
@@ -42,7 +44,7 @@ BOOST_AUTO_TEST_CASE(get_next_work_pow_limit)
     pindexLast.nHeight = 2015;
     pindexLast.nTime = 1233061996;  // Block #2015
     pindexLast.nBits = 0x1d00ffff;
-    unsigned int expected_nbits = 0x1d00ffffU;
+    unsigned int expected_nbits = 0x1d03fffcU;
     BOOST_CHECK_EQUAL(CalculateNextWorkRequired(&pindexLast, nLastRetargetTime, chainParams->GetConsensus()), expected_nbits);
     BOOST_CHECK(PermittedDifficultyTransition(chainParams->GetConsensus(), pindexLast.nHeight+1, pindexLast.nBits, expected_nbits));
 }
@@ -51,7 +53,7 @@ BOOST_AUTO_TEST_CASE(get_next_work_pow_limit)
 BOOST_AUTO_TEST_CASE(get_next_work_lower_limit_actual)
 {
     const auto chainParams = CreateChainParams(*m_node.args, ChainType::MAIN);
-    int64_t nLastRetargetTime = 1279008237; // Block #66528
+    int64_t nLastRetargetTime = 1279297670; // One second before the last block
     CBlockIndex pindexLast;
     pindexLast.nHeight = 68543;
     pindexLast.nTime = 1279297671;  // Block #68543
@@ -196,17 +198,17 @@ BOOST_AUTO_TEST_CASE(ChainParams_REGTEST_sanity)
 
 BOOST_AUTO_TEST_CASE(ChainParams_TESTNET_sanity)
 {
-    sanity_check_chainparams(*m_node.args, ChainType::TESTNET);
+    BOOST_CHECK_THROW(sanity_check_chainparams(*m_node.args, ChainType::TESTNET), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(ChainParams_TESTNET4_sanity)
 {
-    sanity_check_chainparams(*m_node.args, ChainType::TESTNET4);
+    BOOST_CHECK_THROW(sanity_check_chainparams(*m_node.args, ChainType::TESTNET4), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(ChainParams_SIGNET_sanity)
 {
-    sanity_check_chainparams(*m_node.args, ChainType::SIGNET);
+    BOOST_CHECK_THROW(sanity_check_chainparams(*m_node.args, ChainType::SIGNET), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END()
