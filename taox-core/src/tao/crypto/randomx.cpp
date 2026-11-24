@@ -69,4 +69,50 @@ uint256 RandomXHeaderHashV2(const CBlockHeader& header,
     return RandomXLightHasher{std::as_bytes(seed_bytes)}.HashHeader(header);
 }
 
+
+struct RandomXFullHasher::Impl {
+    xnuva::randomx_foundation::FullHasher engine;
+
+    Impl(std::span<const std::byte> seed_key,
+         std::size_t worker_count)
+        : engine(seed_key, worker_count)
+    {
+    }
+};
+
+RandomXFullHasher::RandomXFullHasher(
+    std::span<const std::byte> seed_key,
+    std::size_t worker_count)
+    : m_impl(std::make_unique<Impl>(seed_key, worker_count))
+{
+}
+
+RandomXFullHasher::~RandomXFullHasher() = default;
+
+uint256 RandomXFullHasher::HashHeader(
+    const CBlockHeader& header) const
+{
+    return HashHeaderForWorker(0, header);
+}
+
+uint256 RandomXFullHasher::HashHeaderForWorker(
+    std::size_t worker_index,
+    const CBlockHeader& header) const
+{
+    DataStream stream{};
+    stream << header;
+
+    if (stream.size() != 80) {
+        throw std::runtime_error(
+            "TaoX RandomX header must be exactly 80 bytes");
+    }
+
+    return FromRawDigest(
+        m_impl->engine.Hash80ByteHeaderForWorker(
+            worker_index,
+            std::span<const std::byte>{
+                stream.data(), stream.size()
+            }));
+}
+
 } // namespace tao::experimental

@@ -54,6 +54,47 @@ int main()
             std::cerr << "FAIL: RandomX v2 header reference vector\n";
             return 1;
         }
+
+        // FULL-MEMORY TAOX HEADER PARITY
+        // Use the existing pinned 80-byte CBlockHeader fixture.
+        // This is an offline adapter test, not network qualification.
+        const std::span<const unsigned char> seed_bytes{
+            seed.data(), seed.size()};
+        const auto seed_key = std::as_bytes(seed_bytes);
+
+        tao::experimental::RandomXLightHasher light{seed_key};
+        tao::experimental::RandomXFullHasher full{seed_key, 2};
+
+        const uint256 full_reference = full.HashHeader(header);
+
+        if (full_reference != header_digest) {
+            std::cerr << "FAIL: full-memory reference hash mismatch\n";
+            return 1;
+        }
+
+        for (const uint32_t nonce : {0U, 1U, 5U, 17U}) {
+            CBlockHeader candidate = header;
+            candidate.nNonce = nonce;
+
+            const uint256 expected = light.HashHeader(candidate);
+
+            for (std::size_t worker = 0; worker < 2; ++worker) {
+                const uint256 actual =
+                    full.HashHeaderForWorker(worker, candidate);
+
+                if (actual != expected) {
+                    std::cerr << "FAIL: TaoX full/light mismatch"
+                              << " at nonce " << nonce
+                              << " worker " << worker << '\n';
+                    return 1;
+                }
+            }
+        }
+
+        std::cout
+            << "PASS: full-memory TaoX reference hash\n"
+            << "PASS: two workers match light-memory hashes"
+            << " across four nonces\n";
         std::cout << "PASS: two pinned RandomX v2 reference vectors\n";
         std::cout << "NOTE: TAO consensus/mining integration NOT tested\n";
         return 0;

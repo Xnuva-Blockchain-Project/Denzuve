@@ -31,6 +31,29 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
+// Optional full-memory RandomX V2 adapter for mining.
+// Ordinary block validation continues to use RandomXLightHasher.
+class RandomXFullHasher {
+public:
+    explicit RandomXFullHasher(
+        std::span<const std::byte> seed_key,
+        std::size_t worker_count = 1);
+    ~RandomXFullHasher();
+
+    RandomXFullHasher(const RandomXFullHasher&) = delete;
+    RandomXFullHasher& operator=(const RandomXFullHasher&) = delete;
+
+    uint256 HashHeader(const CBlockHeader& header) const;
+
+    uint256 HashHeaderForWorker(
+        std::size_t worker_index,
+        const CBlockHeader& header) const;
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
+};
+
 // Reference helper for deterministic unit vectors; inefficient for mining.
 // The seed key is explicit: TAO's on-chain seed schedule is NOT yet selected.
 uint256 RandomXHashV2(std::span<const std::byte> input,
