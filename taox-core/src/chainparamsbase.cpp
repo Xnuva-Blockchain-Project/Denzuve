@@ -12,7 +12,7 @@
 void SetupChainParamsBaseOptions(ArgsManager& argsman)
 {
     argsman.AddArg("-chain=<chain>",
-                   "Select TaoX main or isolated regtest chain.",
+                   "Select Denzuve main or isolated regtest chain.",
                    ArgsManager::ALLOW_ANY, OptionsCategory::CHAINPARAMS);
 }
 
@@ -32,7 +32,7 @@ std::unique_ptr<CBaseChainParams> CreateBaseChainParams(const ChainType chain)
     if (chain == ChainType::REGTEST) {
         return std::make_unique<CBaseChainParams>("regtest", 31338);
     }
-    throw std::runtime_error("Unsupported TaoX network");
+    throw std::runtime_error("Unsupported Denzuve network");
 }
 
 void SelectBaseParams(const ChainType chain)

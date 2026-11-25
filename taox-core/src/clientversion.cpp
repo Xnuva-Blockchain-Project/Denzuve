@@ -85,7 +85,7 @@ std::string CopyrightHolders(const std::string& strPrefix)
 
 std::string LicenseInfo()
 {
-    const std::string URL_SOURCE_CODE = "<https://github.com/bitcoin/bitcoin>";
+    const std::string URL_SOURCE_CODE = "<https://github.com/Xnuva-Blockchain-Project/Denzuve>";
 
     return CopyrightHolders(strprintf(_("Copyright (C) %i-%i"), 2009, COPYRIGHT_YEAR).translated + " ") + "\n" +
            "\n" +
@@ -95,6 +95,8 @@ std::string LicenseInfo()
                .translated +
            "\n" +
            strprintf(_("The source code is available from %s."), URL_SOURCE_CODE).translated +
+           "\n" +
+           "Derived from Bitcoin Core. Upstream source: <https://github.com/bitcoin/bitcoin>." +
            "\n" +
            "\n" +
            _("This is experimental software.") + "\n" +
