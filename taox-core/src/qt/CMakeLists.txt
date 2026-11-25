@@ -54,9 +54,20 @@ set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOUIC_SEARCH_PATHS forms)
 
 set(CMAKE_AUTORCC OFF)
-configure_file(bitcoin_locale.qrc bitcoin_locale.qrc USE_SOURCE_PERMISSIONS COPYONLY)
+option(
+  XNUVA_SHARED_LOCALISATION
+  "Use the pinned independent XNUVA localisation module"
+  ON
+)
+
 qt6_add_resources(BITCOIN_QRC bitcoin.qrc)
-qt6_add_resources(BITCOIN_LOCALE_QRC ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc)
+
+set(BITCOIN_LOCALE_QRC)
+
+if(NOT XNUVA_SHARED_LOCALISATION)
+  configure_file(bitcoin_locale.qrc bitcoin_locale.qrc USE_SOURCE_PERMISSIONS COPYONLY)
+  qt6_add_resources(BITCOIN_LOCALE_QRC ${CMAKE_CURRENT_BINARY_DIR}/bitcoin_locale.qrc)
+endif()
 # See: https://bugreports.qt.io/browse/QTBUG-141858.
 get_target_property(warn_flags warn_interface INTERFACE_COMPILE_OPTIONS)
 if("-Wtrailing-whitespace=any" IN_LIST warn_flags)
@@ -253,7 +264,41 @@ if(qt_lib_type STREQUAL "STATIC_LIBRARY")
   )
 endif()
 
-add_subdirectory(locale)
+if(XNUVA_SHARED_LOCALISATION)
+
+  get_filename_component(
+    XNUVA_LOCALISATION_MODULE
+    "${PROJECT_SOURCE_DIR}/../modules/localisation"
+    ABSOLUTE
+  )
+
+  if(NOT EXISTS
+      "${XNUVA_LOCALISATION_MODULE}/cmake/XnuvaLocalisation.cmake")
+    message(FATAL_ERROR
+      "Pinned Localisation dependency unavailable. Initialise Git submodules.")
+  endif()
+
+  include(
+    "${XNUVA_LOCALISATION_MODULE}/cmake/XnuvaLocalisation.cmake"
+  )
+
+  xnuva_add_localisation(
+    bitcoinqt
+    IDENTITY
+      "${PROJECT_SOURCE_DIR}/localisation/identity/denzuve.json"
+    SOURCE_INVENTORY
+      "${PROJECT_SOURCE_DIR}/localisation/source-inventory.ts"
+  )
+
+  target_compile_definitions(
+    bitcoinqt PRIVATE XNUVA_SHARED_LOCALISATION=1
+  )
+
+else()
+
+  add_subdirectory(locale)
+
+endif()
 
 add_executable(bitcoin-qt
   main.cpp

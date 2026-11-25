@@ -493,7 +493,11 @@ int GuiMain(int argc, char* argv[])
 
     /// 1. Basic Qt initialization (not dependent on parameters or configuration)
     Q_INIT_RESOURCE(bitcoin);
+#ifdef XNUVA_SHARED_LOCALISATION
+    Q_INIT_RESOURCE(xnuva_localisation);
+#else
     Q_INIT_RESOURCE(bitcoin_locale);
+#endif
 
 #if defined(QT_QPA_PLATFORM_ANDROID)
     QApplication::setAttribute(Qt::AA_DontUseNativeMenuBar);
