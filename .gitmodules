@@ -1,3 +1,7 @@
 [submodule "modern-core"]
 	path = modern-core
 	url = https://github.com/bitcoin/bitcoin.git
+[submodule "modules/localisation"]
+	path = modules/localisation
+	url = https://github.com/Xnuva-Blockchain-Project/Localisation.git
+	branch = development/modular-localisation-v1
