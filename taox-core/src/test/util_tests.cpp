@@ -920,6 +920,15 @@ BOOST_AUTO_TEST_CASE(test_FormatParagraph)
     BOOST_CHECK_EQUAL(FormatParagraph("Testing that normal newlines do not get indented.\nLike here.", 79), "Testing that normal newlines do not get indented.\nLike here.");
 }
 
+BOOST_AUTO_TEST_CASE(test_DenzuvePublicVersion)
+{
+    const std::string version = FormatFullVersion();
+    const std::string prefix = "v" DENZUVE_RELEASE_VERSION "+";
+
+    BOOST_CHECK_EQUAL(version.find(prefix), 0U);
+    BOOST_CHECK_GT(version.size(), prefix.size());
+}
+
 BOOST_AUTO_TEST_CASE(test_FormatSubVersion)
 {
     std::vector<std::string> comments;

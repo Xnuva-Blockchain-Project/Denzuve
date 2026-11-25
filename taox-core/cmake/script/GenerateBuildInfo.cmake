@@ -28,48 +28,30 @@ else()
   set(WORKING_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
-set(GIT_TAG)
+# Denzuve release identity is declared in CMakeLists.txt.
+# Git supplies build provenance, not the release version.
+
 set(GIT_COMMIT)
+
 if(NOT "$ENV{BITCOIN_GENBUILD_NO_GIT}" STREQUAL "1")
   find_package(Git QUIET)
   if(Git_FOUND)
     execute_process(
-      COMMAND ${GIT_EXECUTABLE} rev-parse --is-inside-work-tree
+      COMMAND ${GIT_EXECUTABLE} rev-parse --short=12 HEAD
       WORKING_DIRECTORY ${WORKING_DIR}
-      OUTPUT_VARIABLE IS_INSIDE_WORK_TREE
+      RESULT_VARIABLE GIT_RESULT
+      OUTPUT_VARIABLE GIT_COMMIT
       OUTPUT_STRIP_TRAILING_WHITESPACE
       ERROR_QUIET
     )
-    if(IS_INSIDE_WORK_TREE)
-      # Clean 'dirty' status of touched files that haven't been modified.
+
+    if(NOT GIT_RESULT EQUAL 0)
+      unset(GIT_COMMIT)
+    elseif(GIT_COMMIT)
       execute_process(
         COMMAND ${GIT_EXECUTABLE} diff
         WORKING_DIRECTORY ${WORKING_DIR}
         OUTPUT_QUIET
-        ERROR_QUIET
-      )
-
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} describe --abbrev=0
-        WORKING_DIRECTORY ${WORKING_DIR}
-        OUTPUT_VARIABLE MOST_RECENT_TAG
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-      )
-
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-list -1 ${MOST_RECENT_TAG}
-        WORKING_DIRECTORY ${WORKING_DIR}
-        OUTPUT_VARIABLE MOST_RECENT_TAG_COMMIT
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-      )
-
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
-        WORKING_DIRECTORY ${WORKING_DIR}
-        OUTPUT_VARIABLE HEAD_COMMIT
-        OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET
       )
 
@@ -79,29 +61,14 @@ if(NOT "$ENV{BITCOIN_GENBUILD_NO_GIT}" STREQUAL "1")
         RESULT_VARIABLE IS_DIRTY
       )
 
-      if(HEAD_COMMIT STREQUAL MOST_RECENT_TAG_COMMIT AND NOT IS_DIRTY)
-        # If latest commit is tagged and not dirty, then use the tag name.
-        set(GIT_TAG ${MOST_RECENT_TAG})
-      else()
-        # Otherwise, generate suffix from git, i.e. string like "0e0a5173fae3-dirty".
-        execute_process(
-          COMMAND ${GIT_EXECUTABLE} rev-parse --short=12 HEAD
-          WORKING_DIRECTORY ${WORKING_DIR}
-          OUTPUT_VARIABLE GIT_COMMIT
-          OUTPUT_STRIP_TRAILING_WHITESPACE
-          ERROR_QUIET
-        )
-        if(IS_DIRTY)
-          string(APPEND GIT_COMMIT "-dirty")
-        endif()
+      if(IS_DIRTY)
+        string(APPEND GIT_COMMIT "-dirty")
       endif()
     endif()
   endif()
 endif()
 
-if(GIT_TAG)
-  set(NEWINFO "#define BUILD_GIT_TAG \"${GIT_TAG}\"")
-elseif(GIT_COMMIT)
+if(GIT_COMMIT)
   set(NEWINFO "#define BUILD_GIT_COMMIT \"${GIT_COMMIT}\"")
 else()
   set(NEWINFO "// No build information available")

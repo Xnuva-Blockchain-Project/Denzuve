@@ -32,6 +32,11 @@ set(CLIENT_VERSION_MINOR 1)
 set(CLIENT_VERSION_BUILD 0)
 set(CLIENT_VERSION_RC 0)
 set(CLIENT_VERSION_IS_RELEASE "false")
+
+# Independent Denzuve public release identity.
+# CLIENT_VERSION_* retains the inherited compatibility
+# numbering until a separately qualified migration.
+set(DENZUVE_RELEASE_VERSION "0.9.0-alpha")
 set(COPYRIGHT_YEAR "2026")
 
 # During the enabling of the CXX and CXXOBJ languages, we modify
