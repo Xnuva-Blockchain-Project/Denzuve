@@ -84,7 +84,8 @@ void TestAddAddressesToSendBook(interfaces::Node& node)
     }
 
     auto build_address{[]() {
-        const WitnessV0KeyHash dest{GenerateRandomKey().GetPubKey()};
+        // Generate a supported native legacy address.
+        const PKHash dest{GenerateRandomKey().GetPubKey()};
         return std::make_pair(dest, QString::fromStdString(EncodeDestination(dest)));
     }};
 
@@ -106,6 +107,18 @@ void TestAddAddressesToSendBook(interfaces::Node& node)
     std::tie(s_key_dest, preexisting_s_address) = build_address();
     std::tie(std::ignore, new_address_a) = build_address();
     std::tie(std::ignore, new_address_b) = build_address();
+
+    QVERIFY(!preexisting_r_address.isEmpty());
+    QVERIFY(!preexisting_s_address.isEmpty());
+    QVERIFY(!new_address_a.isEmpty());
+    QVERIFY(!new_address_b.isEmpty());
+
+    QVERIFY(preexisting_r_address != preexisting_s_address);
+    QVERIFY(new_address_a != new_address_b);
+    QVERIFY(new_address_a != preexisting_r_address);
+    QVERIFY(new_address_a != preexisting_s_address);
+    QVERIFY(new_address_b != preexisting_r_address);
+    QVERIFY(new_address_b != preexisting_s_address);
 
     {
         LOCK(wallet->cs_wallet);
@@ -154,6 +167,13 @@ void TestAddAddressesToSendBook(interfaces::Node& node)
             "The entered address \"%1\" is already in the address book with "
             "label \"%2\"."
             ).arg(preexisting_s_address).arg(s_label));
+    check_addbook_size(2);
+    QCOMPARE(table_view->model()->rowCount(), 1);
+
+    // Invalid addresses must still be rejected.
+    EditAddressAndSubmit(
+        &editAddressDialog, QString("invalid"), QString(""),
+        QString("The entered address \"\" is not a valid Denzuve address."));
     check_addbook_size(2);
     QCOMPARE(table_view->model()->rowCount(), 1);
 

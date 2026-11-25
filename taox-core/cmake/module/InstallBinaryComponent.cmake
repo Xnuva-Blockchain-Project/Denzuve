@@ -13,6 +13,21 @@ function(install_binary_component component)
     ""                          # multi_value_keywords
   )
   set(target_name ${component})
+
+  # Denzuve executable filenames.
+  # Preserve internal target identifiers.
+  set(output_name ${target_name})
+  if(target_name STREQUAL "bitcoin")
+    set(output_name "denzuve")
+  elseif(target_name STREQUAL "bitcoind")
+    set(output_name "denzuved")
+  elseif(target_name MATCHES "^bitcoin-(cli|qt|wallet|tx|util|node|gui|chainstate)$")
+    string(REGEX REPLACE "^bitcoin-" "denzuve-" output_name "${target_name}")
+  endif()
+
+  if(NOT output_name STREQUAL target_name)
+    set_target_properties(${target_name} PROPERTIES OUTPUT_NAME "${output_name}")
+  endif()
   if(IC_INTERNAL)
     set(runtime_dest ${CMAKE_INSTALL_LIBEXECDIR})
   else()
@@ -25,6 +40,7 @@ function(install_binary_component component)
   if(INSTALL_MAN AND IC_HAS_MANPAGE)
     install(FILES ${PROJECT_SOURCE_DIR}/doc/man/${target_name}.1
       DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
+      RENAME ${output_name}.1
       COMPONENT ${component}
     )
   endif()

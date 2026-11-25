@@ -304,7 +304,16 @@ class Binaries:
         wrapper executable directly, not to the commands that `bitcoin` calls.
         """
         if self.bin_dir is not None:
-            return [os.path.join(self.bin_dir, os.path.basename(bin_path))]
+            filename = os.path.basename(bin_path)
+            candidate = os.path.join(self.bin_dir, filename)
+            if os.path.isfile(candidate):
+                return [candidate]
+
+            # Historical releases retain their original names.
+            stem, suffix = os.path.splitext(filename)
+            legacy_names = {'denzuve': 'bitcoin', 'denzuved': 'bitcoind', 'denzuve-cli': 'bitcoin-cli', 'denzuve-qt': 'bitcoin-qt', 'denzuve-wallet': 'bitcoin-wallet', 'denzuve-tx': 'bitcoin-tx', 'denzuve-util': 'bitcoin-util', 'denzuve-node': 'bitcoin-node', 'denzuve-gui': 'bitcoin-gui', 'denzuve-chainstate': 'bitcoin-chainstate'}
+            legacy_filename = legacy_names.get(stem, stem) + suffix
+            return [os.path.join(self.bin_dir, legacy_filename)]
         elif self.paths.bitcoin_cmd is not None or need_ipc:
             # If the current test needs IPC functionality, use the bitcoin
             # wrapper binary and append -m so it calls multiprocess binaries.
@@ -319,14 +328,14 @@ def get_binary_paths(config):
 
     paths = types.SimpleNamespace()
     binaries = {
-        "bitcoin": "BITCOIN_BIN",
-        "bitcoind": "BITCOIND",
+        "denzuve": "BITCOIN_BIN",
+        "denzuved": "BITCOIND",
         "bench_bitcoin": "BITCOIN_BENCH",
-        "bitcoin-cli": "BITCOINCLI",
-        "bitcoin-util": "BITCOINUTIL",
-        "bitcoin-tx": "BITCOINTX",
-        "bitcoin-chainstate": "BITCOINCHAINSTATE",
-        "bitcoin-wallet": "BITCOINWALLET",
+        "denzuve-cli": "BITCOINCLI",
+        "denzuve-util": "BITCOINUTIL",
+        "denzuve-tx": "BITCOINTX",
+        "denzuve-chainstate": "BITCOINCHAINSTATE",
+        "denzuve-wallet": "BITCOINWALLET",
     }
     # Set paths to bitcoin core binaries allowing overrides with environment
     # variables.
@@ -535,7 +544,7 @@ def initialize_datadir(dirname, n, chain, disable_autoconnect=True):
     datadir = get_datadir_path(dirname, n)
     if not os.path.isdir(datadir):
         os.makedirs(datadir)
-    write_config(os.path.join(datadir, "bitcoin.conf"), n=n, chain=chain, disable_autoconnect=disable_autoconnect)
+    write_config(os.path.join(datadir, "denzuve.conf"), n=n, chain=chain, disable_autoconnect=disable_autoconnect)
     os.makedirs(os.path.join(datadir, 'stderr'), exist_ok=True)
     os.makedirs(os.path.join(datadir, 'stdout'), exist_ok=True)
     return datadir
@@ -603,19 +612,19 @@ def get_temp_default_datadir(temp_dir: pathlib.Path) -> tuple[dict, pathlib.Path
     GetDefaultDataDir() function return a datadir path under the provided
     temp_dir, as well as the complete path it would return."""
     if platform.system() == "Windows":
-        env = dict(APPDATA=str(temp_dir))
-        datadir = temp_dir / "Bitcoin"
+        env = dict(APPDATA=str(temp_dir), LOCALAPPDATA=str(temp_dir))
+        datadir = temp_dir / "Denzuve"
     else:
         env = dict(HOME=str(temp_dir))
         if platform.system() == "Darwin":
-            datadir = temp_dir / "Library/Application Support/Bitcoin"
+            datadir = temp_dir / "Library/Application Support/Denzuve"
         else:
-            datadir = temp_dir / ".bitcoin"
+            datadir = temp_dir / ".denzuve"
     return env, datadir
 
 
 def append_config(datadir, options):
-    with open(os.path.join(datadir, "bitcoin.conf"), 'a') as f:
+    with open(os.path.join(datadir, "denzuve.conf"), 'a') as f:
         for option in options:
             f.write(option + "\n")
 
@@ -623,8 +632,8 @@ def append_config(datadir, options):
 def get_auth_cookie(datadir, chain):
     user = None
     password = None
-    if os.path.isfile(os.path.join(datadir, "bitcoin.conf")):
-        with open(os.path.join(datadir, "bitcoin.conf"), 'r') as f:
+    if os.path.isfile(os.path.join(datadir, "denzuve.conf")):
+        with open(os.path.join(datadir, "denzuve.conf"), 'r') as f:
             for line in f:
                 if line.startswith("rpcuser="):
                     assert user is None  # Ensure that there is only one rpcuser line

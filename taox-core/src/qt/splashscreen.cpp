@@ -21,112 +21,131 @@
 #include <QApplication>
 #include <QCloseEvent>
 #include <QPainter>
+#include <QFontMetrics>
 #include <QRadialGradient>
 #include <QScreen>
 
 
+// Common XNUVA Blockchain Project splash standard.
+// Coin-specific artwork; dynamic version and startup status.
 SplashScreen::SplashScreen(const NetworkStyle* networkStyle)
     : QWidget()
 {
-    // set reference point, paddings
-    int paddingRight            = 50;
-    int paddingTop              = 50;
-    int titleVersionVSpace      = 17;
-    int titleCopyrightVSpace    = 40;
+    const qreal dpr = qApp->devicePixelRatio();
 
-    float fontFactor            = 1.0;
-    float devicePixelRatio      = 1.0;
-    devicePixelRatio = static_cast<QGuiApplication*>(QCoreApplication::instance())->devicePixelRatio();
+    const QSize logicalSize(960, 540);
 
-    // define text to place
-    QString titleText       = CLIENT_NAME;
-    QString versionText     = QString("Version %1").arg(QString::fromStdString(FormatFullVersion()));
-    QString copyrightText   = QString::fromUtf8(CopyrightHolders(strprintf("\xc2\xA9 %u-%u ", 2009, COPYRIGHT_YEAR)).c_str());
-    const QString& titleAddText    = networkStyle->getTitleAddText();
+    const QSize pixelSize(
+        qRound(logicalSize.width() * dpr),
+        qRound(logicalSize.height() * dpr));
 
-    QString font            = QApplication::font().toString();
+    pixmap = QPixmap(pixelSize);
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(QColor(5, 13, 26));
 
-    // create a bitmap according to device pixelratio
-    QSize splashSize(480*devicePixelRatio,320*devicePixelRatio);
-    pixmap = QPixmap(splashSize);
+    const QString titleText = CLIENT_NAME;
 
-    // change to HiDPI if it makes sense
-    pixmap.setDevicePixelRatio(devicePixelRatio);
+    const QString versionText =
+        QString::fromStdString(FormatFullVersion());
 
-    QPainter pixPaint(&pixmap);
-    pixPaint.setPen(QColor(100,100,100));
+    const QString networkText =
+        networkStyle->getTitleAddText();
 
-    // draw a slightly radial gradient
-    QRadialGradient gradient(QPoint(0,0), splashSize.width()/devicePixelRatio);
-    gradient.setColorAt(0, Qt::white);
-    gradient.setColorAt(1, QColor(247,247,247));
-    QRect rGradient(QPoint(0,0), splashSize);
-    pixPaint.fillRect(rGradient, gradient);
+    QPainter painter(&pixmap);
 
-    // draw the bitcoin icon, expected size of PNG: 1024x1024
-    QRect rectIcon(QPoint(-150,-122), QSize(430,430));
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
-    const QSize requiredSize(1024,1024);
-    QPixmap icon(networkStyle->getAppIcon().pixmap(requiredSize));
+    // Coordinates are logical pixels, not device pixels.
+    const QRect canvas(QPoint(0, 0), logicalSize);
 
-    pixPaint.drawPixmap(rectIcon, icon);
+    const QPixmap artwork(":/icons/denzuve_splash");
 
-    // check font size and drawing with
-    pixPaint.setFont(QFont(font, 33*fontFactor));
-    QFontMetrics fm = pixPaint.fontMetrics();
-    int titleTextWidth = GUIUtil::TextWidth(fm, titleText);
-    if (titleTextWidth > 176) {
-        fontFactor = fontFactor * 176 / titleTextWidth;
+    if (!artwork.isNull()) {
+        const QPixmap scaled = artwork.scaled(
+            pixelSize,
+            Qt::KeepAspectRatioByExpanding,
+            Qt::SmoothTransformation);
+
+        const QRect crop(
+            (scaled.width() - pixelSize.width()) / 2,
+            (scaled.height() - pixelSize.height()) / 2,
+            pixelSize.width(),
+            pixelSize.height());
+
+        painter.drawPixmap(canvas, scaled, crop);
+    } else {
+        // Readable fallback if artwork is unavailable.
+        QFont titleFont = QApplication::font();
+        titleFont.setPixelSize(54);
+        titleFont.setBold(true);
+
+        painter.setFont(titleFont);
+        painter.setPen(QColor(220, 231, 245));
+
+        painter.drawText(
+            QRect(40, 120, 880, 100),
+            Qt::AlignCenter,
+            titleText);
+
+        QFont projectFont = QApplication::font();
+        projectFont.setPixelSize(20);
+
+        painter.setFont(projectFont);
+
+        painter.drawText(
+            QRect(40, 230, 880, 50),
+            Qt::AlignCenter,
+            QStringLiteral("XNUVA Blockchain Project"));
     }
 
-    pixPaint.setFont(QFont(font, 33*fontFactor));
-    fm = pixPaint.fontMetrics();
-    titleTextWidth  = GUIUtil::TextWidth(fm, titleText);
-    pixPaint.drawText(pixmap.width()/devicePixelRatio-titleTextWidth-paddingRight,paddingTop,titleText);
+    // Bottom-left panel, consistent across the wallet family.
+    const QRect statusPanel(18, 418, 410, 116);
 
-    pixPaint.setFont(QFont(font, 15*fontFactor));
+    painter.fillRect(
+        statusPanel,
+        QColor(5, 13, 26, 245));
 
-    // if the version string is too long, reduce size
-    fm = pixPaint.fontMetrics();
-    int versionTextWidth  = GUIUtil::TextWidth(fm, versionText);
-    if(versionTextWidth > titleTextWidth+paddingRight-10) {
-        pixPaint.setFont(QFont(font, 10*fontFactor));
-        titleVersionVSpace -= 5;
+    QFont versionFont = QApplication::font();
+    versionFont.setPixelSize(14);
+    versionFont.setBold(true);
+
+    painter.setFont(versionFont);
+    painter.setPen(Qt::white);
+
+    painter.drawText(
+        QRect(30, 424, 386, 23),
+        Qt::AlignLeft | Qt::AlignVCenter,
+        QStringLiteral("Version ") + versionText);
+
+    QFont networkFont = QApplication::font();
+    networkFont.setPixelSize(13);
+
+    painter.setFont(networkFont);
+    painter.setPen(QColor(185, 205, 225));
+
+    const QString displayedNetwork =
+        networkText.isEmpty()
+            ? QStringLiteral("Mainnet")
+            : networkText;
+
+    painter.drawText(
+        QRect(30, 449, 386, 20),
+        Qt::AlignLeft | Qt::AlignVCenter,
+        displayedNetwork);
+
+    painter.end();
+
+    setWindowTitle(titleText + " " + networkText);
+
+    setFixedSize(logicalSize);
+
+    if (QScreen* screen = QGuiApplication::primaryScreen()) {
+        move(screen->availableGeometry().center()
+             - rect().center());
     }
-    pixPaint.drawText(pixmap.width()/devicePixelRatio-titleTextWidth-paddingRight+2,paddingTop+titleVersionVSpace,versionText);
-
-    // draw copyright stuff
-    {
-        pixPaint.setFont(QFont(font, 10*fontFactor));
-        const int x = pixmap.width()/devicePixelRatio-titleTextWidth-paddingRight;
-        const int y = paddingTop+titleCopyrightVSpace;
-        QRect copyrightRect(x, y, pixmap.width() - x - paddingRight, pixmap.height() - y);
-        pixPaint.drawText(copyrightRect, Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap, copyrightText);
-    }
-
-    // draw additional text if special network
-    if(!titleAddText.isEmpty()) {
-        QFont boldFont = QFont(font, 10*fontFactor);
-        boldFont.setWeight(QFont::Bold);
-        pixPaint.setFont(boldFont);
-        fm = pixPaint.fontMetrics();
-        int titleAddTextWidth  = GUIUtil::TextWidth(fm, titleAddText);
-        pixPaint.drawText(pixmap.width()/devicePixelRatio-titleAddTextWidth-10,15,titleAddText);
-    }
-
-    pixPaint.end();
-
-    // Set window title
-    setWindowTitle(titleText + " " + titleAddText);
-
-    // Resize window and move to center of desktop, disallow resizing
-    QRect r(QPoint(), QSize(pixmap.size().width()/devicePixelRatio,pixmap.size().height()/devicePixelRatio));
-    resize(r.size());
-    setFixedSize(r.size());
-    move(QGuiApplication::primaryScreen()->geometry().center() - r.center());
 
     installEventFilter(this);
-
     GUIUtil::handleCloseWindowShortcut(this);
 }
 
@@ -226,9 +245,17 @@ void SplashScreen::paintEvent(QPaintEvent *event)
 {
     QPainter painter(this);
     painter.drawPixmap(0, 0, pixmap);
-    QRect r = rect().adjusted(5, 5, -5, -5);
-    painter.setPen(curColor);
-    painter.drawText(r, curAlignment, curMessage);
+
+    QFont statusFont = font();
+    statusFont.setPixelSize(13);
+
+    painter.setFont(statusFont);
+    painter.setPen(QColor(235, 245, 255));
+
+    painter.drawText(
+        QRect(30, 472, 386, 56),
+        Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+        curMessage);
 }
 
 void SplashScreen::closeEvent(QCloseEvent *event)

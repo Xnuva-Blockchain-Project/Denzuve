@@ -30,6 +30,14 @@
 #include <noui.h>
 #include <policy/fees/block_policy_estimator.h>
 #include <pow.h>
+#include <chain.h>
+#include <tao/consensus/pow_algorithm.h>
+#include <tao/crypto/randomx.h>
+
+#include <iostream>
+#include <limits>
+#include <memory>
+#include <span>
 #include <random.h>
 #include <rpc/blockchain.h>
 #include <rpc/register.h>
@@ -379,19 +387,30 @@ TestChain100Setup::TestChain100Setup(
     TestOpts opts)
     : TestingSetup{ChainType::REGTEST, opts}
 {
-    SetMockTime(1598887952);
+    // Deterministic test clock after the pinned TAO regtest genesis.
+    SetMockTime(1763856000 + 60);
     constexpr std::array<unsigned char, 32> vchKey = {
         {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}};
     coinbaseKey.Set(vchKey.begin(), vchKey.end(), true);
 
-    // Generate a 100-block chain:
+    // Generate the chain required by native coinbase maturity.
     this->mineBlocks(COINBASE_MATURITY);
 
     {
         LOCK(::cs_main);
-        assert(
-            m_node.chainman->ActiveChain().Tip()->GetBlockHash().ToString() ==
-            "0c8c5f79505775a0f6aed6aca2350718ceb9c6f2c878667864d5c7a6d8ffa2a6");
+        const auto& chain = m_node.chainman->ActiveChain();
+
+        Assert(chain.Height() == COINBASE_MATURITY);
+        Assert(chain.Genesis()->GetBlockHash() ==
+               m_node.chainman->GetConsensus().hashGenesisBlock);
+
+        // Native deterministic tip observed in two separately
+        // constructed fixtures during K10F; requalify on every run.
+        Assert(chain.Tip()->GetBlockHash().ToString() ==
+               "5a93a1067a38c3d0462e69d997a3b12b7dc7d1fd90f4bae91b58325900bb3e19");
+        std::cerr << "DENZUVE_FIXTURE_TIP="
+                  << chain.Tip()->GetBlockHash().ToString()
+                  << std::endl;
     }
 }
 
@@ -401,6 +420,13 @@ void TestChain100Setup::mineBlocks(int num_blocks)
     for (int i = 0; i < num_blocks; i++) {
         std::vector<CMutableTransaction> noTxns;
         CBlock b = CreateAndProcessBlock(noTxns, scriptPubKey);
+
+        {
+            LOCK(::cs_main);
+            Assert(m_node.chainman->ActiveChain().Tip()
+                       ->GetBlockHash() == b.GetHash());
+        }
+
         SetMockTime(GetTime() + 1);
         m_coinbase_txns.push_back(b.vtx[0]);
     }
@@ -422,7 +448,79 @@ CBlock TestChain100Setup::CreateBlock(
     }
     RegenerateCommitments(block, *Assert(m_node.chainman));
 
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, m_node.chainman->GetConsensus())) ++block.nNonce;
+    // Test mining follows the candidate's contextual consensus rules.
+    const auto& consensus = m_node.chainman->GetConsensus();
+    taox::consensus::PoWAlgorithm algorithm;
+    std::optional<uint256> seed;
+
+    {
+        LOCK(::cs_main);
+        const CBlockIndex* parent = chainstate.m_chain.Tip();
+
+        Assert(parent != nullptr);
+        Assert(block.hashPrevBlock == parent->GetBlockHash());
+
+        const int height = parent->nHeight + 1;
+
+        const auto selected =
+            taox::consensus::SelectPoWAlgorithm(height, consensus);
+
+        Assert(selected.has_value());
+        algorithm = *selected;
+
+        if (algorithm == taox::consensus::PoWAlgorithm::RandomX) {
+            const auto seed_height =
+                taox::consensus::RandomXSeedHeight(height, consensus);
+
+            Assert(seed_height.has_value());
+            Assert(*seed_height <= parent->nHeight);
+
+            const CBlockIndex* ancestor =
+                parent->GetAncestor(static_cast<int>(*seed_height));
+
+            Assert(ancestor != nullptr);
+            Assert(ancestor->IsValid(BLOCK_VALID_TREE));
+
+            seed = ancestor->GetBlockHash();
+        }
+    }
+
+    // A light hasher is sufficient for low-difficulty test mining.
+    std::unique_ptr<tao::experimental::RandomXLightHasher> hasher;
+
+    if (seed) {
+        const std::span<const unsigned char> seed_bytes{
+            seed->data(), seed->size()
+        };
+
+        hasher =
+            std::make_unique<tao::experimental::RandomXLightHasher>(
+                std::as_bytes(seed_bytes));
+    }
+
+    bool solved = false;
+
+    for (uint64_t tries = 0; tries < 1000000; ++tries) {
+        const uint256 pow_hash = hasher
+            ? hasher->HashHeader(block)
+            : block.GetPoWHash();
+
+        if (CheckProofOfWork(pow_hash, block.nBits, consensus)) {
+            solved = true;
+            break;
+        }
+
+        if (block.nNonce == std::numeric_limits<uint32_t>::max()) {
+            break;
+        }
+
+        ++block.nNonce;
+    }
+
+    if (!solved) {
+        throw std::runtime_error(
+            "Denzuve test mining exhausted nonce attempts");
+    }
 
     return block;
 }
