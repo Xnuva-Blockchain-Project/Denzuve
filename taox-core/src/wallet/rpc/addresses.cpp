@@ -59,6 +59,13 @@ RPCHelpMan getnewaddress()
         output_type = parsed.value();
     }
 
+    // TaoX historical compatibility: reject unsupported
+    // address types before creating wallet destinations.
+    if (output_type != OutputType::LEGACY) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
+                           "TaoX supports only legacy receiving addresses");
+    }
+
     auto op_dest = pwallet->GetNewDestination(output_type, label);
     if (!op_dest) {
         throw JSONRPCError(RPC_WALLET_KEYPOOL_RAN_OUT, util::ErrorString(op_dest).original);
@@ -103,6 +110,12 @@ RPCHelpMan getrawchangeaddress()
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, strprintf("Unknown address type '%s'", request.params[0].get_str()));
         }
         output_type = parsed.value();
+    }
+
+    // Historical TaoX does not support witness change outputs.
+    if (output_type != OutputType::LEGACY) {
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
+                           "TaoX supports only legacy change addresses");
     }
 
     auto op_dest = pwallet->GetNewChangeDestination(output_type);
@@ -549,6 +562,9 @@ RPCHelpMan getaddressesbylabel()
         if (_is_change) return;
         if (_label == label) {
             std::string address = EncodeDestination(_dest);
+            // Keep existing unsupported entries in the wallet
+            // database, but do not expose empty addresses.
+            if (address.empty()) return;
             // CWallet::m_address_book is not expected to contain duplicate
             // address strings, but build a separate set as a precaution just in
             // case it does.

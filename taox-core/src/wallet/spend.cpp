@@ -1090,6 +1090,19 @@ static util::Result<CreatedTransactionResult> CreateTransactionInternal(
 
     CAmount recipients_sum = 0;
     const OutputType change_type = wallet.TransactionChangeType(coin_control.m_change_type ? *coin_control.m_change_type : wallet.m_default_change_type, vecSend);
+    // TaoX historical compatibility: transaction change
+    // must not use unsupported witness destinations.
+    if (change_type != OutputType::LEGACY) {
+        return util::Error{Untranslated("TaoX supports only legacy transaction change")};
+    }
+
+    // Explicit change addresses bypass change-type selection.
+    // Restrict this compatibility mode to legacy P2PKH.
+    if (!std::holds_alternative<CNoDestination>(coin_control.destChange)
+        && !std::holds_alternative<PKHash>(coin_control.destChange)) {
+        return util::Error{Untranslated("TaoX supports only legacy P2PKH change addresses")};
+    }
+
     ReserveDestination reservedest(&wallet, change_type);
     unsigned int outputs_to_subtract_fee_from = 0; // The number of outputs which we are subtracting the fee from
     for (const auto& recipient : vecSend) {

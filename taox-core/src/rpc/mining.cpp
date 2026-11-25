@@ -136,7 +136,12 @@ static RPCHelpMan getnetworkhashps()
     };
 }
 
-static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block)
+struct RandomXMiningContext {
+    std::optional<uint256> seed;
+    std::unique_ptr<tao::experimental::RandomXFullHasher> hasher;
+};
+
+static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t& max_tries, std::shared_ptr<const CBlock>& block_out, bool process_new_block, RandomXMiningContext& mining_context)
 {
     block_out.reset();
     block.hashMerkleRoot = BlockMerkleRoot(block);
@@ -186,15 +191,26 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
         }
     }
 
-    std::unique_ptr<tao::experimental::RandomXLightHasher> randomx_hasher;
-
+    // Reuse the full-memory dataset while the consensus seed is unchanged.
+    // This context belongs only to the current RPC mining operation.
     if (randomx_seed) {
-        const std::span<const unsigned char> seed_bytes{
-            randomx_seed->data(), randomx_seed->size()
-        };
-        randomx_hasher =
-            std::make_unique<tao::experimental::RandomXLightHasher>(
-                std::as_bytes(seed_bytes));
+        if (!mining_context.hasher ||
+            mining_context.seed != randomx_seed) {
+
+            // Never continue hashing with a previous seed's dataset.
+            mining_context.hasher.reset();
+            mining_context.seed.reset();
+
+            const std::span<const unsigned char> seed_bytes{
+                randomx_seed->data(), randomx_seed->size()
+            };
+
+            mining_context.hasher =
+                std::make_unique<tao::experimental::RandomXFullHasher>(
+                    std::as_bytes(seed_bytes), 1);
+
+            mining_context.seed = randomx_seed;
+        }
     }
 
     bool found_solution = false;
@@ -202,7 +218,7 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
     while (max_tries > 0 && !chainman.m_interrupt) {
         const uint256 pow_hash =
             algorithm == taox::consensus::PoWAlgorithm::RandomX
-                ? randomx_hasher->HashHeader(block)
+                ? mining_context.hasher->HashHeader(block)
                 : block.GetPoWHash();
 
         --max_tries;
@@ -239,12 +255,13 @@ static bool GenerateBlock(ChainstateManager& chainman, CBlock&& block, uint64_t&
 static UniValue generateBlocks(ChainstateManager& chainman, Mining& miner, const CScript& coinbase_output_script, int nGenerate, uint64_t nMaxTries)
 {
     UniValue blockHashes(UniValue::VARR);
+    RandomXMiningContext mining_context;
     while (nGenerate > 0 && !chainman.m_interrupt) {
         std::unique_ptr<BlockTemplate> block_template(miner.createNewBlock({ .coinbase_output_script = coinbase_output_script, .include_dummy_extranonce = true }, /*cooldown=*/false));
         CHECK_NONFATAL(block_template);
 
         std::shared_ptr<const CBlock> block_out;
-        if (!GenerateBlock(chainman, block_template->getBlock(), nMaxTries, block_out, /*process_new_block=*/true)) {
+        if (!GenerateBlock(chainman, block_template->getBlock(), nMaxTries, block_out, /*process_new_block=*/true, mining_context)) {
             break;
         }
 
@@ -471,7 +488,8 @@ static RPCHelpMan generateblock()
     std::shared_ptr<const CBlock> block_out;
     uint64_t max_tries{DEFAULT_MAX_TRIES};
 
-    if (!GenerateBlock(chainman, std::move(block), max_tries, block_out, process_new_block) || !block_out) {
+    RandomXMiningContext mining_context;
+    if (!GenerateBlock(chainman, std::move(block), max_tries, block_out, process_new_block, mining_context) || !block_out) {
         throw JSONRPCError(RPC_MISC_ERROR, "Failed to make block.");
     }
 
