@@ -80,9 +80,9 @@ target_link_libraries(bitcoin_consensus
     secp256k1
 )
 
-# Experimental TaoX hashing adapter: consumes the version-pinned shared
-# XNUVA RandomX foundation. OFF by default; never linked into node consensus.
-# This is a source-only development gate, not a hard-fork activation.
+# Denzuve hashing adapter: consumes the version-pinned shared
+# XNUVA RandomX foundation for consensus validation and mining.
+# Compiling RandomX support does not activate it on mainnet.
 option(TAO_ENABLE_RANDOMX
   "Build the pinned RandomX engine for TaoX consensus and mining"
   ON
@@ -92,7 +92,7 @@ if(TAO_ENABLE_RANDOMX)
   # Keep this exact audited commit until tests justify a controlled update.
   FetchContent_Declare(taox_shared_randomx_foundation
     GIT_REPOSITORY https://github.com/Xnuva-Blockchain-Project/Xnuva-RandomX-Engine.git
-    GIT_TAG 857841056ed939eeea4fd640463b54b6a5cd54af
+    GIT_TAG 546a21488dc3a03588094b4e9bdff6535534bcef
     GIT_SHALLOW FALSE
   )
   FetchContent_MakeAvailable(taox_shared_randomx_foundation)
