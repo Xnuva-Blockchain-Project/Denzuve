@@ -83,8 +83,12 @@ BOOST_AUTO_TEST_CASE(bloom_create_insert_serialize_with_tweak)
 
 BOOST_AUTO_TEST_CASE(bloom_create_insert_key)
 {
-    std::string strSecret = std::string("5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C");
+    std::string strSecret = std::string("7W2Q9rLoxzd3VGUYKVcP3FdmCSnmqiBqjGk89wGTAzWeyr9yQuW");
+    // The same synthetic private scalar with a Bitcoin WIF prefix
+    // must not be accepted as a native Denzuve private key.
+    BOOST_CHECK(!DecodeSecret("5Kg1gnAjaLfKiwhhPpGS3QfRg2m6awQvaj98JCZBZQ5SuS2F15C").IsValid());
     CKey key = DecodeSecret(strSecret);
+    BOOST_REQUIRE(key.IsValid());
     CPubKey pubkey = key.GetPubKey();
     std::vector<unsigned char> vchPubKey(pubkey.begin(), pubkey.end());
 

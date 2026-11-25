@@ -243,6 +243,18 @@ struct TestChain100Setup : public TestingSetup {
 };
 
 /**
+ * Extended native REGTEST fixture for tests requiring
+ * exactly 100 initial blocks.
+ *
+ * The underlying maturity-based fixture and production
+ * coinbase maturity remain unchanged.
+ */
+struct TestChainExtended100Setup : public TestChain100Setup {
+    TestChainExtended100Setup();
+};
+
+
+/**
  * Make a test setup that has disk access to the debug.log file disabled. Can
  * be used in "hot loops", for example fuzzing or benchmarking.
  */

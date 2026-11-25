@@ -128,6 +128,27 @@ BOOST_AUTO_TEST_CASE(signet_parse_tests)
 }
 
 //! Test retrieval of valid assumeutxo values.
+BOOST_AUTO_TEST_CASE(denzuve_unconfigured_assumeutxo)
+{
+    // Transition Release 1 currently has no authorised
+    // snapshot metadata on either supported network.
+    for (const auto chain : {ChainType::MAIN, ChainType::REGTEST}) {
+        const auto params = CreateChainParams(*m_node.args, chain);
+
+        for (const int height : {0, 20, 100, 110, 120, 200, 210}) {
+            BOOST_CHECK(!params->AssumeutxoForHeight(height));
+        }
+
+        BOOST_CHECK(!params->AssumeutxoForBlockhash(
+            params->GetConsensus().hashGenesisBlock));
+
+        BOOST_CHECK(!params->AssumeutxoForBlockhash(
+            uint256{"6affe030b7965ab538f820a56ef56c8149b7dc1d1c144af57113be080db7c397"}));
+    }
+}
+
+// Positive inherited snapshot vectors remain an outstanding
+// qualification requirement and must not dereference empty metadata.
 BOOST_AUTO_TEST_CASE(test_assumeutxo)
 {
     const auto params = CreateChainParams(*m_node.args, ChainType::REGTEST);
@@ -141,11 +162,17 @@ BOOST_AUTO_TEST_CASE(test_assumeutxo)
         BOOST_CHECK(!out);
     }
 
-    const auto out110 = *params->AssumeutxoForHeight(110);
+    const auto snapshot110 = params->AssumeutxoForHeight(110);
+    BOOST_REQUIRE_MESSAGE(snapshot110.has_value(),
+        "Positive snapshot fixture requires qualified metadata");
+    const auto& out110 = *snapshot110;
     BOOST_CHECK_EQUAL(out110.hash_serialized.ToString(), "b952555c8ab81fec46f3d4253b7af256d766ceb39fb7752b9d18cdf4a0141327");
     BOOST_CHECK_EQUAL(out110.m_chain_tx_count, 111U);
 
-    const auto out110_2 = *params->AssumeutxoForBlockhash(uint256{"6affe030b7965ab538f820a56ef56c8149b7dc1d1c144af57113be080db7c397"});
+    const auto snapshot110_2 = params->AssumeutxoForBlockhash(uint256{"6affe030b7965ab538f820a56ef56c8149b7dc1d1c144af57113be080db7c397"});
+    BOOST_REQUIRE_MESSAGE(snapshot110_2.has_value(),
+        "Positive snapshot fixture requires qualified block metadata");
+    const auto& out110_2 = *snapshot110_2;
     BOOST_CHECK_EQUAL(out110_2.hash_serialized.ToString(), "b952555c8ab81fec46f3d4253b7af256d766ceb39fb7752b9d18cdf4a0141327");
     BOOST_CHECK_EQUAL(out110_2.m_chain_tx_count, 111U);
 }

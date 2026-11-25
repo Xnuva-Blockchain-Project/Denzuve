@@ -27,7 +27,7 @@ using namespace util::hex_literals;
 // unit tests.
 static const CAmount low_fee_amt{200};
 
-struct TxPackageTest : TestChain100Setup {
+struct TxPackageTest : TestChainExtended100Setup {
 // Create placeholder transactions that have no meaning.
 inline CTransactionRef create_placeholder_tx(size_t num_inputs, size_t num_outputs)
 {

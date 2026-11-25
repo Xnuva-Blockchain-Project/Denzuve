@@ -14,7 +14,7 @@
 
 using interfaces::FoundBlock;
 
-BOOST_FIXTURE_TEST_SUITE(interfaces_tests, TestChain100Setup)
+BOOST_FIXTURE_TEST_SUITE(interfaces_tests, TestChainExtended100Setup)
 
 BOOST_AUTO_TEST_CASE(findBlock)
 {

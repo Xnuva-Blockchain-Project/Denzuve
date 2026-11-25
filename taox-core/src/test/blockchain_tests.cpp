@@ -95,7 +95,7 @@ static void CheckGetPruneHeight(const node::BlockManager& blockman, const CChain
     BOOST_CHECK_EQUAL(*prune_height, height);
 }
 
-BOOST_FIXTURE_TEST_CASE(get_prune_height, TestChain100Setup)
+BOOST_FIXTURE_TEST_CASE(get_prune_height, TestChainExtended100Setup)
 {
     LOCK(::cs_main);
     const auto& chain = m_node.chainman->ActiveChain();

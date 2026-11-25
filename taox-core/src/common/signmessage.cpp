@@ -21,7 +21,9 @@
  * Text used to signify that a signed message follows and to prevent
  * inadvertently signing a transaction.
  */
-const std::string MESSAGE_MAGIC = "Bitcoin Signed Message:\n";
+// Preserve the historical TaoCoin cryptographic domain.
+// Presentation rebranding must not invalidate historical signatures.
+const std::string MESSAGE_MAGIC = "TaoCoin Signed Message:\n";
 
 MessageVerificationResult MessageVerify(
     const std::string& address,

@@ -414,6 +414,30 @@ TestChain100Setup::TestChain100Setup(
     }
 }
 
+TestChainExtended100Setup::TestChainExtended100Setup()
+    : TestChain100Setup{}
+{
+    constexpr int extended_height{100};
+
+    static_assert(COINBASE_MATURITY <= extended_height);
+
+    // The base constructor has already verified the
+    // deterministic native maturity-based chain.
+    Assert(m_coinbase_txns.size() == COINBASE_MATURITY);
+
+    mineBlocks(extended_height - COINBASE_MATURITY);
+
+    {
+        LOCK(::cs_main);
+        const auto& chain = m_node.chainman->ActiveChain();
+
+        Assert(chain.Height() == extended_height);
+        Assert(chain.Genesis()->GetBlockHash() ==
+               m_node.chainman->GetConsensus().hashGenesisBlock);
+        Assert(m_coinbase_txns.size() == extended_height);
+    }
+}
+
 void TestChain100Setup::mineBlocks(int num_blocks)
 {
     CScript scriptPubKey = CScript() << ToByteVector(coinbaseKey.GetPubKey()) << OP_CHECKSIG;
