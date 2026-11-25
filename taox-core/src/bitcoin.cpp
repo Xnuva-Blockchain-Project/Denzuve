@@ -39,7 +39,7 @@ Commands:
 static constexpr auto HELP_FULL = R"(
 Additional less commonly used commands:
   bench [ARGS]      Run bench command, equivalent to running 'bench_bitcoin [ARGS]'.
-  chainstate [ARGS] Run bitcoin kernel chainstate util, equivalent to running 'denzuve-chainstate [ARGS]'.
+  chainstate [ARGS] Run Denzuve kernel chainstate util, equivalent to running 'denzuve-chainstate [ARGS]'.
   test [ARGS]       Run unit tests, equivalent to running 'test_bitcoin [ARGS]'.
   test-gui [ARGS]   Run GUI unit tests, equivalent to running 'test_bitcoin-qt [ARGS]'.
 )";

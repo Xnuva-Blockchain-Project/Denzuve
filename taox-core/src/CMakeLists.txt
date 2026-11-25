@@ -84,7 +84,7 @@ target_link_libraries(bitcoin_consensus
 # XNUVA RandomX foundation for consensus validation and mining.
 # Compiling RandomX support does not activate it on mainnet.
 option(TAO_ENABLE_RANDOMX
-  "Build the pinned RandomX engine for TaoX consensus and mining"
+  "Build the pinned RandomX engine for Denzuve consensus and mining"
   ON
 )
 if(TAO_ENABLE_RANDOMX)
