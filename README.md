@@ -1,75 +1,105 @@
-# TaoCoin Revival — Current Maintained Network
+# Denzuve Core (DZUV)
 
-**This is the current TAO network and the branch normal users should build and run.**
+Part of the XNUVA Blockchain Project.
 
-Official project website: https://europazeus.org
+## DEVELOPMENT STATUS — EXPERIMENTAL
 
-## Current network
+This repository contains the ongoing modernisation of
+the historical TAO Revival cryptocurrency.
 
-- Mainnet P2P: `31137`
-- Mainnet RPC: `31138`
-- Testnet P2P: `41137`
-- Testnet RPC: `41138`
-- Mainnet message magic: `b3 3d dc 92`
-- Unix datadir: `~/.taocoin-revival`
-- Proof of work: scrypt
-- Genesis hash: `41de2a4b7018115eae4a3e7e82189b551aaf871af66929fa28a49ee852abb67e`
+The software is not yet approved for production use,
+public mainnet deployment or mining with real funds.
 
-TaoCoin Revival preserves the original TaoCoin genesis block unchanged and creates a new verifiable successor chain from that genesis.
+RandomX mainnet activation remains disabled.
 
-The historical post-genesis TaoCoin blockchain is not currently known to survive publicly. No missing historical blocks or balances are fabricated.
+No public release has been authorised.
 
-## Canonical Revival fork point
+## Project identity
 
-TaoCoin Revival block 1:
+- Cryptocurrency: Denzuve
+- Ticker: DZUV
+- Historical network: TAO Revival
+- Roman heritage: Denarius
+- Smallest monetary unit: Princeps
+- Atomic units per DZUV: 100,000,000
 
-`717fc5ef97ded9f7d514fcb1ed558bc76596ce85f09890efa6e668d228c4a57f`
+Princeps is named in memory of Prince,
+a beloved companion of the project founder.
 
-This height-1 checkpoint defines the TaoCoin Revival chain.
+## Blockchain continuity
 
-## Which branch should I use?
+Denzuve is the continuation of TAO Revival.
 
-For normal TAO use, mining, nodes, wallets and releases, use:
+Modernisation and rebranding do not authorise
+a blockchain reset, coin swap, balance alteration
+or unapproved consensus activation.
 
-`main` / `tao-revival`
+Historical genesis, ownership and monetary rules
+must be preserved and independently qualified.
 
-The repository also retains legacy source for preservation and historical reference. Do **not** use the legacy branches for the current Revival network.
+## Technology
 
-Legacy preservation branches include:
+- Modernised Bitcoin Core 31.1-derived foundation
+- Historical Scrypt proof-of-work compatibility
+- Modular XNUVA RandomX Engine
+- Full-memory RandomX mining implementation
+- Graphical Qt wallet
+- Independent Denzuve software release lifecycle
 
-- `legacy-preserved`
-- `preserved-2017-baseline`
+Future software development will follow the project's
+own roadmap, with selective upstream security updates
+and continued respect for upstream attribution.
 
-Historical preservation tag:
+## Repository structure
 
-- `preserved-original-2017`
+The modernised application source is under `taox-core/`.
 
-## Important compatibility note
+Historical source and migration records are retained
+for provenance and compatibility analysis.
 
-Legacy TaoCoin and TaoCoin Revival use different network identities. A legacy node using the old P2P network will not peer with TaoCoin Revival.
+Active development branch:
 
-Current Revival software must use the Revival network parameters above.
+`modernisation/denzuve-transition-release-1`
 
-## Build
+The main branch is an experimental development baseline,
+not a production release.
 
-For Ubuntu/Debian headless-node builds, install the required system development packages first:
+## Engineering standards
 
-```bash
-sudo apt update
-sudo apt install -y build-essential libboost-all-dev libssl-dev libdb++-dev zlib1g-dev
-```
+All releases are subject to the Golden Standard
+Cryptocurrency Modernisation Handbook:
 
-Then build the daemon:
+https://github.com/Xnuva-Blockchain-Project/Golden-Standard-Modernisation
 
-```bash
-cd src
-make -f makefile.unix -j"$(nproc)"
-```
+Reliability first. Release second.
 
-The daemon target is `taocoind`; the GUI target is TaoCoin-Qt.
+## Outstanding qualification
 
-See [doc/build-unix.md](doc/build-unix.md) for the complete Linux build guide, dependency explanations and troubleshooting.
+- Complete branding and packaging
+- Final graphical artwork and visual qualification
+- Reproducible RandomX dependency pins
+- Full regression and adversarial testing
+- Historical chain and legacy wallet compatibility
+- Independent network and proxy qualification
+- Restart, recovery, sustained operation and rollback
 
-## License
+## Historical repository
 
-TaoCoin is released under the MIT license. See `COPYING`.
+The original TAO Revival repository remains available:
+
+https://github.com/Xnuva-Blockchain-Project/Tao
+
+Preserved development source before repository transfer:
+
+https://github.com/Xnuva-Blockchain-Project/Tao/commit/df98de7b8d23420d37d358cdd5e7bc3fda200821
+
+## Licence and attribution
+
+Distributed under the applicable MIT software licence.
+
+Existing upstream copyright notices, third-party
+licences and Git development ancestry are preserved.
+
+## Project website
+
+https://europazeus.org
