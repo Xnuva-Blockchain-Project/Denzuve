@@ -562,7 +562,7 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
 
                 BOOST_REQUIRE_EQUAL(
                     candidate.nBits,
-                    Params().GenesisBlock().nBits);
+                    m_node.chainman->GetParams().GenesisBlock().nBits);
             };
 
         // Last full-subsidy candidate.
