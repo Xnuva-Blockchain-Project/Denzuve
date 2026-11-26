@@ -270,10 +270,6 @@ void check_computeblockversion(VersionBitsCache& versionbitscache, const Consens
     uint32_t period = params.vDeployments[dep].period;
     uint32_t threshold = params.vDeployments[dep].threshold;
 
-    BOOST_REQUIRE(period > 0); // no division by zero, thankyou
-    BOOST_REQUIRE(0 < threshold); // must be able to have a window that doesn't activate
-    BOOST_REQUIRE(threshold < period); // must be able to have a window that does activate
-
     // should not be any signalling for first block
     BOOST_CHECK_EQUAL(versionbitscache.ComputeBlockVersion(nullptr, params), VERSIONBITS_TOP_BITS);
 
@@ -290,6 +286,10 @@ void check_computeblockversion(VersionBitsCache& versionbitscache, const Consens
         BOOST_CHECK_EQUAL(nTimeout, Consensus::BIP9Deployment::NO_TIMEOUT);
         return;
     }
+
+    BOOST_REQUIRE(period > 0); // no division by zero, thankyou
+    BOOST_REQUIRE(0 < threshold); // must be able to have a window that doesn't activate
+    BOOST_REQUIRE(threshold < period); // must be able to have a window that does activate
 
     BOOST_REQUIRE(nStartTime < nTimeout);
     BOOST_REQUIRE(nStartTime >= 0);
@@ -442,42 +442,73 @@ BOOST_FIXTURE_TEST_CASE(versionbits_computeblockversion, BlockVersionTest)
 {
     VersionBitsCache vbcache;
 
-    // check that any deployment on any chain can conceivably reach both
-    // ACTIVE and FAILED states in roughly the way we expect
-    for (const auto& chain_type: {ChainType::MAIN, ChainType::TESTNET, ChainType::TESTNET4, ChainType::SIGNET, ChainType::REGTEST}) {
-        const auto chainParams = CreateChainParams(*m_node.args, chain_type);
-        uint32_t chain_all_vbits{0};
+    // Native deployments are deliberately disabled.
+    // Verify that signalling cannot activate them.
+    for (const auto chain_type : {ChainType::MAIN, ChainType::REGTEST}) {
+        const auto chain_params = CreateChainParams(*m_node.args, chain_type);
+        const auto& params = chain_params->GetConsensus();
+
+        vbcache.Clear();
+
+        VersionBitsTester native_chain{m_rng};
+        const auto* tip = native_chain.Mine(
+            1000, 1230767999, VERSIONBITS_TOP_BITS | 0x1fffffff).Tip();
+
         for (int i = 0; i < (int)Consensus::MAX_VERSION_BITS_DEPLOYMENTS; ++i) {
             const auto dep = static_cast<Consensus::DeploymentPos>(i);
-            // Check that no bits are reused (within the same chain). This is
-            // disallowed because the transition to FAILED (on timeout) does
-            // not take precedence over STARTED/LOCKED_IN. So all softforks on
-            // the same bit might overlap, even when non-overlapping start-end
-            // times are picked.
-            const uint32_t dep_mask{uint32_t{1} << chainParams->GetConsensus().vDeployments[dep].bit};
-            BOOST_CHECK(!(chain_all_vbits & dep_mask));
-            chain_all_vbits |= dep_mask;
-            check_computeblockversion(vbcache, chainParams->GetConsensus(), dep);
+            const auto& deployment = params.vDeployments[dep];
+
+            BOOST_CHECK_EQUAL(
+                deployment.nStartTime,
+                Consensus::BIP9Deployment::NEVER_ACTIVE);
+
+            BOOST_CHECK_EQUAL(deployment.period, 0U);
+            BOOST_CHECK_EQUAL(deployment.threshold, 0U);
+
+            BOOST_CHECK(!vbcache.IsActiveAfter(nullptr, params, dep));
+            BOOST_CHECK(!vbcache.IsActiveAfter(tip, params, dep));
+
+            check_computeblockversion(vbcache, params, dep);
         }
+
+        BOOST_CHECK_EQUAL(
+            vbcache.ComputeBlockVersion(tip, params),
+            VERSIONBITS_TOP_BITS);
     }
 
-    {
-        // Use regtest/testdummy to ensure we always exercise some
-        // deployment that's not always/never active
-        ArgsManager args;
-        args.ForceSetArg("-vbparams", "testdummy:1199145601:1230767999"); // January 1, 2008 - December 31, 2008
-        const auto chainParams = CreateChainParams(args, ChainType::REGTEST);
-        check_computeblockversion(vbcache, chainParams->GetConsensus(), Consensus::DEPLOYMENT_TESTDUMMY);
+    // Exercise positive and negative activation transitions
+    // using a private copy of consensus parameters.
+    // Never modify the actual native chain configuration.
+    const auto native_params =
+        CreateChainParams(*m_node.args, ChainType::REGTEST);
+
+    for (const int min_height : {0, 403200}) {
+        Consensus::Params synthetic = native_params->GetConsensus();
+
+        auto& deployment =
+            synthetic.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY];
+
+        deployment.bit = 28;
+        deployment.nStartTime = 1199145601;
+        deployment.nTimeout = 1230767999;
+        deployment.period = 144;
+        deployment.threshold = 108;
+        deployment.min_activation_height = min_height;
+
+        check_computeblockversion(
+            vbcache,
+            synthetic,
+            Consensus::DEPLOYMENT_TESTDUMMY);
     }
 
-    {
-        // Use regtest/testdummy to ensure we always exercise the
-        // min_activation_height test, even if we're not using that in a
-        // live deployment
-        ArgsManager args;
-        args.ForceSetArg("-vbparams", "testdummy:1199145601:1230767999:403200"); // January 1, 2008 - December 31, 2008, min act height 403200
-        const auto chainParams = CreateChainParams(args, ChainType::REGTEST);
-        check_computeblockversion(vbcache, chainParams->GetConsensus(), Consensus::DEPLOYMENT_TESTDUMMY);
+    // The synthetic tests must leave the real parameters untouched.
+    for (const auto& deployment :
+         native_params->GetConsensus().vDeployments) {
+        BOOST_CHECK_EQUAL(
+            deployment.nStartTime,
+            Consensus::BIP9Deployment::NEVER_ACTIVE);
+        BOOST_CHECK_EQUAL(deployment.period, 0U);
+        BOOST_CHECK_EQUAL(deployment.threshold, 0U);
     }
 }
 

@@ -3,6 +3,8 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <common/system.h>
+#include <chainparams.h>
+#include <stdexcept>
 #include <interfaces/mining.h>
 #include <node/miner.h>
 #include <util/time.h>
@@ -19,7 +21,7 @@ using node::BlockWaitOptions;
 
 namespace testnet4_miner_tests {
 
-struct Testnet4MinerTestingSetup : public Testnet4Setup {
+struct Testnet4MinerTestingSetup : public RegTestingSetup {
     std::unique_ptr<Mining> MakeMining()
     {
         return interfaces::MakeMining(m_node, /*wait_loaded=*/false);
@@ -31,6 +33,15 @@ BOOST_FIXTURE_TEST_SUITE(testnet4_miner_tests, Testnet4MinerTestingSetup)
 
 BOOST_AUTO_TEST_CASE(MiningInterface)
 {
+    BOOST_REQUIRE(
+        m_node.chainman->GetConsensus().fPowAllowMinDifficultyBlocks);
+
+    // The native network must retain its explicit rejection
+    // of unsupported Bitcoin network configurations.
+    BOOST_CHECK_THROW(
+        CreateChainParams(*m_node.args, ChainType::TESTNET4),
+        std::runtime_error);
+
     auto mining{MakeMining()};
     BOOST_REQUIRE(mining);
 
@@ -38,7 +49,7 @@ BOOST_AUTO_TEST_CASE(MiningInterface)
     options.include_dummy_extranonce = true;
     std::unique_ptr<BlockTemplate> block_template;
 
-    // Set node time a few minutes past the testnet4 genesis block
+    // Set node time a few minutes past the native regtest genesis block
     const int64_t genesis_time{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip()->GetBlockTime())};
     SetMockTime(genesis_time + 3 * 60);
 

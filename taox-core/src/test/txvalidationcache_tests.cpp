@@ -15,9 +15,10 @@
 
 #include <boost/test/unit_test.hpp>
 
-struct Dersig100Setup : public TestChain100Setup {
-    Dersig100Setup()
-        : TestChain100Setup{ChainType::REGTEST, {.extra_args = {"-testactivationheight=dersig@102"}}} {}
+// Keep the original 100-block workload while using native
+// consensus. Individual script flags are supplied explicitly
+// to CheckInputScripts by the regression tests.
+struct Dersig100Setup : public TestChainExtended100Setup {
 };
 
 bool CheckInputScripts(const CTransaction& tx, TxValidationState& state,
@@ -232,8 +233,10 @@ BOOST_FIXTURE_TEST_CASE(checkinputs_test, Dersig100Setup)
         ValidateCheckInputsForAllFlags(CTransaction(spend_tx), SCRIPT_VERIFY_DERSIG | SCRIPT_VERIFY_LOW_S | SCRIPT_VERIFY_STRICTENC, false, m_node.chainman->ActiveChainstate().CoinsTip(), m_node.chainman->m_validation_cache);
     }
 
-    // And if we produce a block with this tx, it should be valid (DERSIG not
-    // enabled yet), even though there's no cache entry.
+    // Under native consensus DERSIG remains disabled.
+    // Explicit script-flag tests above still exercise DERSIG
+    // rejection and cache isolation.
+    // Block acceptance must succeed without a cached result.
     CBlock block;
 
     block = CreateAndProcessBlock({spend_tx}, p2pk_scriptPubKey);
