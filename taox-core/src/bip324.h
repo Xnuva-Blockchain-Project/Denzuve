@@ -28,6 +28,18 @@ public:
     static constexpr std::byte IGNORE_BIT{0x80};
 
 private:
+    friend struct BIP324Test;
+
+    /** Internal key derivation with explicit network context.
+     * Production callers use Initialize(), which supplies the
+     * configured native network magic.
+     */
+    void InitializeWithNetworkMagic(
+        const EllSwiftPubKey& their_pubkey,
+        bool initiator,
+        bool self_decrypt,
+        std::span<const unsigned char, 4> message_header) noexcept;
+
     std::optional<FSChaCha20> m_send_l_cipher;
     std::optional<FSChaCha20> m_recv_l_cipher;
     std::optional<FSChaCha20Poly1305> m_send_p_cipher;

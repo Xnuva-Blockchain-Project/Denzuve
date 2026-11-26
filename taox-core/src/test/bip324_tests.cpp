@@ -19,9 +19,13 @@
 
 #include <boost/test/unit_test.hpp>
 
-namespace {
-
 struct BIP324Test : BasicTestingSetup {
+    // Original Bitcoin BIP324 reference-vector context.
+    // This is not a Denzuve network parameter.
+    static constexpr std::array<unsigned char, 4>
+        REFERENCE_MAGIC{0xf9, 0xbe, 0xb4, 0xd9};
+
+
 void TestBIP324PacketVector(
     uint32_t in_idx,
     const std::string& in_priv_ours_hex,
@@ -60,7 +64,11 @@ void TestBIP324PacketVector(
     BIP324Cipher cipher(key, ellswift_ours);
     BOOST_CHECK(!cipher);
     BOOST_CHECK(cipher.GetOurPubKey() == ellswift_ours);
-    cipher.Initialize(ellswift_theirs, in_initiating);
+    cipher.InitializeWithNetworkMagic(
+        ellswift_theirs,
+        in_initiating,
+        /*self_decrypt=*/false,
+        REFERENCE_MAGIC);
     BOOST_CHECK(cipher);
 
     // Compare session variables.
@@ -107,7 +115,11 @@ void TestBIP324PacketVector(
         BIP324Cipher dec_cipher(key, ellswift_ours);
         BOOST_CHECK(!dec_cipher);
         BOOST_CHECK(dec_cipher.GetOurPubKey() == ellswift_ours);
-        dec_cipher.Initialize(ellswift_theirs, (error == 1) ^ in_initiating, /*self_decrypt=*/true);
+        dec_cipher.InitializeWithNetworkMagic(
+            ellswift_theirs,
+            (error == 1) ^ in_initiating,
+            /*self_decrypt=*/true,
+            REFERENCE_MAGIC);
         BOOST_CHECK(dec_cipher);
 
         // Compare session variables.
@@ -157,16 +169,238 @@ void TestBIP324PacketVector(
         }
     }
 }
-}; // struct BIP324Test
 
-}  // namespace
+    // Deterministic test keys only. Never used by production peers.
+    void TestNativeNetworkTransport()
+    {
+        const auto initiator_bytes = ParseHex(
+            "00000000000000000000000000000000"
+            "00000000000000000000000000000001");
+
+        const auto responder_bytes = ParseHex(
+            "00000000000000000000000000000000"
+            "00000000000000000000000000000002");
+
+        CKey initiator_key;
+        CKey responder_key;
+
+        initiator_key.Set(
+            initiator_bytes.begin(),
+            initiator_bytes.end(), true);
+
+        responder_key.Set(
+            responder_bytes.begin(),
+            responder_bytes.end(), true);
+
+        BOOST_REQUIRE(initiator_key.IsValid());
+        BOOST_REQUIRE(responder_key.IsValid());
+
+        std::array<std::byte, 32> initiator_entropy{};
+        std::array<std::byte, 32> responder_entropy{};
+
+        responder_entropy[0] = std::byte{1};
+
+        const auto native_magic = Params().MessageStart();
+
+        BOOST_REQUIRE(!std::ranges::equal(
+            native_magic, REFERENCE_MAGIC));
+
+        BIP324Cipher initiator{
+            initiator_key, initiator_entropy};
+
+        BIP324Cipher responder{
+            responder_key, responder_entropy};
+
+        const auto initiator_pubkey =
+            initiator.GetOurPubKey();
+
+        const auto responder_pubkey =
+            responder.GetOurPubKey();
+
+        // Exercise the public production initialisation path.
+        initiator.Initialize(
+            responder_pubkey, /*initiator=*/true);
+
+        responder.Initialize(
+            initiator_pubkey, /*initiator=*/false);
+
+        BOOST_REQUIRE(initiator);
+        BOOST_REQUIRE(responder);
+
+        BOOST_REQUIRE(std::ranges::equal(
+            initiator.GetSessionID(),
+            responder.GetSessionID()));
+
+        BOOST_REQUIRE(std::ranges::equal(
+            initiator.GetSendGarbageTerminator(),
+            responder.GetReceiveGarbageTerminator()));
+
+        BOOST_REQUIRE(std::ranges::equal(
+            responder.GetSendGarbageTerminator(),
+            initiator.GetReceiveGarbageTerminator()));
+
+        const std::array<std::byte, 3> aad{
+            std::byte{0x44},
+            std::byte{0x5a},
+            std::byte{0x56}
+        };
+
+        auto exchange_packet =
+            [&](BIP324Cipher& sender,
+                BIP324Cipher& receiver,
+                unsigned index) {
+
+                const std::array<std::byte, 4> contents{
+                    std::byte(index & 0xffU),
+                    std::byte((index >> 8) & 0xffU),
+                    std::byte{0x12},
+                    std::byte{0x34}
+                };
+
+                const bool ignore = (index % 2 == 0);
+
+                std::vector<std::byte> ciphertext(
+                    contents.size() + BIP324Cipher::EXPANSION);
+
+                sender.Encrypt(
+                    contents, aad, ignore, ciphertext);
+
+                const auto length = receiver.DecryptLength(
+                    std::span{ciphertext}.first(
+                        BIP324Cipher::LENGTH_LEN));
+
+                BOOST_REQUIRE_EQUAL(length, contents.size());
+
+                std::vector<std::byte> decrypted(length);
+                bool decoded_ignore = false;
+
+                BOOST_REQUIRE(receiver.Decrypt(
+                    std::span{ciphertext}.subspan(
+                        BIP324Cipher::LENGTH_LEN),
+                    aad, decoded_ignore, decrypted));
+
+                BOOST_CHECK(std::ranges::equal(
+                    contents, decrypted));
+
+                BOOST_CHECK_EQUAL(decoded_ignore, ignore);
+            };
+
+        // Exercise both directions before, during and after
+        // two complete cipher rekey boundaries.
+        for (unsigned i = 0;
+             i < 2 * BIP324Cipher::REKEY_INTERVAL + 2;
+             ++i) {
+
+            exchange_packet(initiator, responder, i);
+            exchange_packet(responder, initiator, i);
+        }
+
+        // Verify rejection of a modified authentication tag.
+        const std::array<std::byte, 2> contents{
+            std::byte{0x12}, std::byte{0x34}
+        };
+
+        std::vector<std::byte> corrupted(
+            contents.size() + BIP324Cipher::EXPANSION);
+
+        initiator.Encrypt(
+            contents, aad, false, corrupted);
+
+        BOOST_REQUIRE_EQUAL(
+            responder.DecryptLength(
+                std::span{corrupted}.first(
+                    BIP324Cipher::LENGTH_LEN)),
+            contents.size());
+
+        corrupted.back() ^= std::byte{1};
+
+        std::vector<std::byte> rejected(contents.size());
+        bool ignored = false;
+
+        BOOST_REQUIRE(!responder.Decrypt(
+            std::span{corrupted}.subspan(
+                BIP324Cipher::LENGTH_LEN),
+            aad, ignored, rejected));
+
+        // Fresh ciphers with identical key material but
+        // different network contexts.
+        BIP324Cipher native_sender{
+            initiator_key, initiator_pubkey};
+
+        BIP324Cipher reference_sender{
+            initiator_key, initiator_pubkey};
+
+        BIP324Cipher reference_receiver{
+            responder_key, responder_pubkey};
+
+        native_sender.Initialize(
+            responder_pubkey, /*initiator=*/true);
+
+        reference_sender.InitializeWithNetworkMagic(
+            responder_pubkey,
+            /*initiator=*/true,
+            /*self_decrypt=*/false,
+            REFERENCE_MAGIC);
+
+        reference_receiver.InitializeWithNetworkMagic(
+            initiator_pubkey,
+            /*initiator=*/false,
+            /*self_decrypt=*/false,
+            REFERENCE_MAGIC);
+
+        BOOST_REQUIRE(std::ranges::equal(
+            reference_sender.GetSessionID(),
+            reference_receiver.GetSessionID()));
+
+        BOOST_REQUIRE(!std::ranges::equal(
+            native_sender.GetSessionID(),
+            reference_receiver.GetSessionID()));
+
+        BOOST_REQUIRE(!std::ranges::equal(
+            native_sender.GetSendGarbageTerminator(),
+            reference_receiver.GetReceiveGarbageTerminator()));
+
+        std::vector<std::byte> native_packet(
+            contents.size() + BIP324Cipher::EXPANSION);
+
+        std::vector<std::byte> reference_packet(
+            contents.size() + BIP324Cipher::EXPANSION);
+
+        native_sender.Encrypt(
+            contents, aad, false, native_packet);
+
+        reference_sender.Encrypt(
+            contents, aad, false, reference_packet);
+
+        BOOST_REQUIRE(native_packet != reference_packet);
+
+        // Authenticate the native payload using the wrong
+        // network context and known fixture payload length.
+        // No allocation is based on a wrong-key length.
+        std::vector<std::byte> cross_network_output(
+            contents.size());
+
+        bool cross_network_ignore = false;
+
+        BOOST_REQUIRE(!reference_receiver.Decrypt(
+            std::span{native_packet}.subspan(
+                BIP324Cipher::LENGTH_LEN),
+            aad,
+            cross_network_ignore,
+            cross_network_output));
+
+        BOOST_REQUIRE(std::ranges::equal(
+            Params().MessageStart(), native_magic));
+    }
+
+}; // struct BIP324Test
 
 BOOST_FIXTURE_TEST_SUITE(bip324_tests, BIP324Test)
 
 BOOST_AUTO_TEST_CASE(packet_test_vectors) {
-    // BIP324 key derivation uses network magic in the HKDF process. We use mainnet params here
-    // as that is what the test vectors are written for.
-    SelectParams(ChainType::MAIN);
+    // The original BIP324 vectors use Bitcoin network magic.
+    // The fixture supplies it directly to the private cipher
+    // initialisation method without altering global chain params.
 
     // The test vectors are converted using the following Python code in the BIP bip-0324/ directory:
     //
@@ -298,6 +532,11 @@ BOOST_AUTO_TEST_CASE(packet_test_vectors) {
         "fc2431beb9a666bf888df0662276a4b6a1af5061072992ef408f2b686c86a2ac",
         "",
         "1a7f3fb83ad2b050b663b8df6b7c2cc2d8e169a869a58bf7ef5ab5db97a505c84a812e100d9445da4fc39a1176d6aed3995f6868631224b86f10603217c8d13270e0c6d054ad9e0d0b7dc0c8e59a37cd05a0a45faa14b4ffc8d12b641f62e6f1b71c1f72b737e9ce3fe74be779b25e70bf11d98766b3876d0fa28d3c669087fc");
+}
+
+BOOST_AUTO_TEST_CASE(native_network_transport)
+{
+    TestNativeNetworkTransport();
 }
 
 BOOST_AUTO_TEST_SUITE_END()
