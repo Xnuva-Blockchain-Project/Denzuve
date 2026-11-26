@@ -6,6 +6,8 @@
 #include <consensus/amount.h>
 #include <consensus/validation.h>
 #include <node/kernel_notifications.h>
+#include <kernel/coinstats.h>
+#include <txdb.h>
 #include <random.h>
 #include <rpc/blockchain.h>
 #include <script/script.h>
@@ -18,7 +20,9 @@
 #include <uint256.h>
 #include <util/check.h>
 #include <validation.h>
+#include <validationinterface.h>
 
+#include <iostream>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -163,6 +167,103 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
     // validation chain.
     BOOST_CHECK(block_added);
     BOOST_CHECK_EQUAL(curr_tip, get_notify_tip());
+}
+
+
+// Generate an authentic native reference commitment from
+// a fully validated deterministic chain, not a snapshot.
+//
+// This is test-only reference generation. It does not
+// register trusted snapshot metadata or activate snapshots.
+BOOST_FIXTURE_TEST_CASE(
+    denzuve_native_snapshot_reference,
+    TestChainExtended100Setup)
+{
+    auto& manager = *Assert(m_node.chainman);
+
+    BOOST_REQUIRE_EQUAL(
+        WITH_LOCK(cs_main, return manager.ActiveHeight()),
+        100);
+
+    BOOST_REQUIRE(
+        manager.GetParams().GetAvailableSnapshotHeights().empty());
+
+    mineBlocks(10);
+
+    m_node.validation_signals->SyncWithValidationInterfaceQueue();
+
+    LOCK(cs_main);
+
+    auto& chainstate = manager.ActiveChainstate();
+    const auto* tip = manager.ActiveChain().Tip();
+
+    BOOST_REQUIRE(tip != nullptr);
+    BOOST_REQUIRE_EQUAL(tip->nHeight, 110);
+    BOOST_REQUIRE_EQUAL(m_coinbase_txns.size(), 110U);
+
+    BOOST_REQUIRE(
+        manager.ActiveChain().Genesis()->GetBlockHash() ==
+        manager.GetConsensus().hashGenesisBlock);
+
+    BOOST_REQUIRE(
+        !manager.GetParams().AssumeutxoForHeight(110));
+
+    BOOST_REQUIRE(
+        !manager.GetParams().AssumeutxoForBlockhash(
+            tip->GetBlockHash()));
+
+    BOOST_REQUIRE(
+        !manager.CurrentChainstate().m_from_snapshot_blockhash);
+
+    BOOST_REQUIRE(tip->IsValid(BLOCK_VALID_SCRIPTS));
+
+    // Flush the already-validated UTXO cache before
+    // independently calculating its serialized commitment.
+    chainstate.CoinsTip().Flush(
+        /*reallocate_cache=*/false);
+
+    const auto stats = kernel::ComputeUTXOStats(
+        kernel::CoinStatsHashType::HASH_SERIALIZED,
+        &chainstate.CoinsDB(),
+        manager.m_blockman);
+
+    BOOST_REQUIRE(stats.has_value());
+
+    BOOST_REQUIRE_EQUAL(stats->nHeight, 110);
+
+    BOOST_REQUIRE(
+        stats->hashBlock == tip->GetBlockHash());
+
+    BOOST_REQUIRE(!stats->hashSerialized.IsNull());
+
+    BOOST_REQUIRE_EQUAL(
+        stats->nTransactionOutputs, 110U);
+
+    BOOST_REQUIRE_EQUAL(
+        tip->m_chain_tx_count, 111U);
+
+    BOOST_REQUIRE(stats->total_amount.has_value());
+
+    BOOST_REQUIRE_EQUAL(
+        *stats->total_amount, 110 * 50 * COIN);
+
+    std::cout
+        << "DENZUVE_SNAPSHOT_HEIGHT="
+        << stats->nHeight << std::endl
+        << "DENZUVE_SNAPSHOT_BLOCKHASH="
+        << stats->hashBlock.GetHex() << std::endl
+        << "DENZUVE_SNAPSHOT_UTXO_HASH="
+        << stats->hashSerialized.GetHex() << std::endl
+        << "DENZUVE_SNAPSHOT_CHAIN_TX_COUNT="
+        << tip->m_chain_tx_count << std::endl
+        << "DENZUVE_SNAPSHOT_OUTPUT_COUNT="
+        << stats->nTransactionOutputs << std::endl
+        << "DENZUVE_SNAPSHOT_TOTAL_BASE_UNITS="
+        << *stats->total_amount << std::endl;
+
+    std::cout
+        << "DENZUVE_NATIVE_SNAPSHOT_REFERENCE_COMPLETE"
+        << std::endl;
 }
 
 BOOST_AUTO_TEST_SUITE_END()
