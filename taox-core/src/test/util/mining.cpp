@@ -6,6 +6,8 @@
 
 #include <chain.h>
 #include <tao/consensus/pow_algorithm.h>
+#include <tao/consensus/pow_seed_tracker.h>
+#include <stdexcept>
 #include <tao/crypto/randomx.h>
 
 #include <cstdint>
@@ -127,6 +129,14 @@ std::vector<std::shared_ptr<CBlock>> CreateBlockChain(size_t total_height, const
 {
     std::vector<std::shared_ptr<CBlock>> ret{total_height};
     auto time{params.GenesisBlock().nTime};
+
+    taox::consensus::RandomXSeedTracker tracker;
+    tracker.SetVerifiedAnchor(
+        0, params.GenesisBlock().GetHash());
+
+    std::optional<uint256> active_seed;
+    std::unique_ptr<tao::experimental::RandomXLightHasher> hasher;
+
     // NOTE: here `height` does not correspond to the block height but the block height - 1.
     for (size_t height{0}; height < total_height; ++height) {
         CBlock& block{*(ret.at(height) = std::make_shared<CBlock>())};
@@ -150,9 +160,91 @@ std::vector<std::shared_ptr<CBlock>> CreateBlockChain(size_t total_height, const
         block.nBits = params.GenesisBlock().nBits;
         block.nNonce = 0;
 
-        while (!CheckProofOfWork(block.GetHash(), block.nBits, params.GetConsensus())) {
+        if (EnableFuzzDeterminism()) {
+            while (!CheckProofOfWork(
+                block.GetHash(), block.nBits,
+                params.GetConsensus())) {
+                ++block.nNonce;
+                assert(block.nNonce);
+            }
+
+            continue;
+        }
+
+        const auto& consensus = params.GetConsensus();
+
+        const auto context =
+            tracker.GetNextHeaderContext(block, consensus);
+
+        if (!context) {
+            throw std::runtime_error(
+                "Denzuve offline fixture lacks contextual PoW");
+        }
+
+        if (context->algorithm ==
+            taox::consensus::PoWAlgorithm::RandomX) {
+
+            if (!context->seed) {
+                throw std::runtime_error(
+                    "Denzuve offline fixture lacks RandomX seed");
+            }
+
+            if (!hasher || active_seed != context->seed) {
+                hasher.reset();
+
+                const auto& seed = *context->seed;
+
+                const std::span<const unsigned char> seed_bytes{
+                    seed.data(), seed.size()
+                };
+
+                hasher =
+                    std::make_unique<
+                        tao::experimental::RandomXLightHasher>(
+                            std::as_bytes(seed_bytes));
+
+                active_seed = context->seed;
+            }
+        } else {
+            hasher.reset();
+            active_seed.reset();
+        }
+
+        bool solved = false;
+
+        for (uint64_t attempt = 0;
+             attempt < 1'000'000;
+             ++attempt) {
+
+            const uint256 pow_hash = hasher
+                ? hasher->HashHeader(block)
+                : block.GetPoWHash();
+
+            if (CheckProofOfWorkImpl(
+                    pow_hash, block.nBits, consensus)) {
+                solved = true;
+                break;
+            }
+
+            if (block.nNonce ==
+                std::numeric_limits<uint32_t>::max()) {
+                break;
+            }
+
             ++block.nNonce;
-            assert(block.nNonce);
+        }
+
+        if (!solved) {
+            throw std::runtime_error(
+                "Denzuve offline fixture nonce search exhausted");
+        }
+
+        if (!tracker.RecordVerifiedHeader(
+                tracker.VerifiedHeight() + 1,
+                block.GetHash(),
+                consensus)) {
+            throw std::runtime_error(
+                "Denzuve offline fixture ancestry advancement failed");
         }
     }
     return ret;

@@ -24,9 +24,12 @@
 #include <validation.h>
 #include <versionbits.h>
 #include <pow.h>
+#include <tao/consensus/pow_contextual_hash.h>
+#include <limits>
 
 #include <test/util/common.h>
 #include <test/util/setup_common.h>
+#include <test/util/mining.h>
 
 #include <memory>
 #include <vector>
@@ -39,7 +42,7 @@ using interfaces::Mining;
 using node::BlockAssembler;
 
 namespace miner_tests {
-struct MinerTestingSetup : public TestingSetup {
+struct MinerTestingSetup : public RegTestingSetup {
     void TestPackageSelection(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestBasicMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst, int baseheight) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
     void TestPrioritisedMining(const CScript& scriptPubKey, const std::vector<CTransactionRef>& txFirst) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
@@ -486,32 +489,96 @@ void MinerTestingSetup::TestBasicMining(const CScript& scriptPubKey, const std::
         CTxMemPool& tx_mempool{MakeMempool()};
         LOCK(tx_mempool.cs);
 
-        // subsidy changing
+        // Subsidy boundary: synthetic template fixture only.
+        // These indexes are not mined or accepted blocks and
+        // must never be marked as consensus-validated.
         int nHeight = m_node.chainman->ActiveChain().Height();
-        // Create an actual 209999-long block chain (without valid blocks).
-        while (m_node.chainman->ActiveChain().Tip()->nHeight < 209999) {
-            CBlockIndex* prev = m_node.chainman->ActiveChain().Tip();
-            CBlockIndex* next = new CBlockIndex();
-            next->phashBlock = new uint256(m_rng.rand256());
-            m_node.chainman->ActiveChainstate().CoinsTip().SetBestBlock(next->GetBlockHash());
-            next->pprev = prev;
-            next->nHeight = prev->nHeight + 1;
-            next->BuildSkip();
-            m_node.chainman->ActiveChain().SetTip(*next);
-        }
-        BOOST_REQUIRE(mining->createNewBlock(options, /*cooldown=*/false));
-        // Extend to a 210000-long block chain.
-        while (m_node.chainman->ActiveChain().Tip()->nHeight < 210000) {
-            CBlockIndex* prev = m_node.chainman->ActiveChain().Tip();
-            CBlockIndex* next = new CBlockIndex();
-            next->phashBlock = new uint256(m_rng.rand256());
-            m_node.chainman->ActiveChainstate().CoinsTip().SetBestBlock(next->GetBlockHash());
-            next->pprev = prev;
-            next->nHeight = prev->nHeight + 1;
-            next->BuildSkip();
-            m_node.chainman->ActiveChain().SetTip(*next);
-        }
-        BOOST_REQUIRE(mining->createNewBlock(options, /*cooldown=*/false));
+
+        const auto& consensus =
+            m_node.chainman->GetConsensus();
+
+        const int halving_height =
+            consensus.nSubsidyHalvingInterval;
+
+        BOOST_REQUIRE_EQUAL(halving_height, 210000);
+        BOOST_REQUIRE(nHeight < halving_height - 2);
+
+        auto extend_synthetic_chain = [&](int target_height) {
+            while (m_node.chainman->ActiveChain().Tip()->nHeight
+                   < target_height) {
+
+                CBlockIndex* prev =
+                    m_node.chainman->ActiveChain().Tip();
+
+                CBlockIndex* next = new CBlockIndex();
+
+                next->phashBlock =
+                    new uint256(m_rng.rand256());
+
+                next->pprev = prev;
+                next->nHeight = prev->nHeight + 1;
+
+                // Preserve coherent regtest difficulty and time
+                // for unsolved block-template construction.
+                next->nBits = prev->nBits;
+                next->nTime = prev->nTime + 1;
+                next->nTimeMax = next->nTime;
+
+                next->BuildSkip();
+
+                m_node.chainman->ActiveChainstate()
+                    .CoinsTip().SetBestBlock(next->GetBlockHash());
+
+                m_node.chainman->ActiveChain().SetTip(*next);
+            }
+        };
+
+        auto check_subsidy_template =
+            [&](int candidate_height, CAmount expected_reward) {
+
+                BOOST_REQUIRE_EQUAL(
+                    m_node.chainman->ActiveChain().Height() + 1,
+                    candidate_height);
+
+                auto subsidy_template =
+                    mining->createNewBlock(
+                        options, /*cooldown=*/false);
+
+                BOOST_REQUIRE(subsidy_template);
+
+                const CBlock candidate{
+                    subsidy_template->getBlock()};
+
+                BOOST_REQUIRE_EQUAL(candidate.vtx.size(), 1U);
+                BOOST_REQUIRE(candidate.vtx[0]->IsCoinBase());
+
+                BOOST_REQUIRE_EQUAL(
+                    candidate.vtx[0]->GetValueOut(),
+                    expected_reward);
+
+                BOOST_REQUIRE_EQUAL(
+                    GetBlockSubsidy(candidate_height, consensus),
+                    expected_reward);
+
+                BOOST_REQUIRE_EQUAL(
+                    candidate.nBits,
+                    Params().GenesisBlock().nBits);
+            };
+
+        // Last full-subsidy candidate.
+        extend_synthetic_chain(halving_height - 2);
+        check_subsidy_template(
+            halving_height - 1, 50 * COIN);
+
+        // First reduced-subsidy candidate.
+        extend_synthetic_chain(halving_height - 1);
+        check_subsidy_template(
+            halving_height, 25 * COIN);
+
+        // Preserve the original post-boundary template coverage.
+        extend_synthetic_chain(halving_height);
+        check_subsidy_template(
+            halving_height + 1, 25 * COIN);
 
         // invalid p2sh txn in tx_mempool, template creation fails
         tx.vin[0].prevout.hash = txFirst[0]->GetHash();
@@ -781,15 +848,68 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
         {
             // A block template does not have proof-of-work, but it might pass
             // verification by coincidence. Grind the nonce if needed:
-            while (CheckProofOfWork(block.GetHash(), block.nBits, Assert(m_node.chainman)->GetParams().GetConsensus())) {
-                block.nNonce++;
+            auto& chainman = *Assert(m_node.chainman);
+            const auto& consensus = chainman.GetConsensus();
+
+            const CBlockIndex* parent = nullptr;
+
+            {
+                LOCK(cs_main);
+                parent = chainman.m_blockman.LookupBlockIndex(
+                    block.hashPrevBlock);
+
+                BOOST_REQUIRE(parent != nullptr);
+
+                bool invalid_pow_found = false;
+
+                for (uint64_t attempt = 0;
+                     attempt < 1'000'000;
+                     ++attempt) {
+
+                    const auto pow_hash =
+                        taox::consensus::CalculateContextualPoWHash(
+                            block, parent, consensus);
+
+                    BOOST_REQUIRE(pow_hash.has_value());
+
+                    if (!CheckProofOfWorkImpl(
+                            *pow_hash, block.nBits, consensus)) {
+                        invalid_pow_found = true;
+                        break;
+                    }
+
+                    if (block.nNonce ==
+                        std::numeric_limits<uint32_t>::max()) {
+                        break;
+                    }
+
+                    ++block.nNonce;
+                }
+
+                BOOST_REQUIRE(invalid_pow_found);
             }
+
+            block.fChecked = false;
 
             std::string reason;
             std::string debug;
             BOOST_REQUIRE(!mining->checkBlock(block, {.check_pow = true}, reason, debug));
-            BOOST_REQUIRE_EQUAL(reason, "high-hash");
-            BOOST_REQUIRE_EQUAL(debug, "proof of work failed");
+            BOOST_REQUIRE_EQUAL(
+                reason, "high-hash-contextual");
+
+            BOOST_REQUIRE_EQUAL(
+                debug, "contextual proof of work failed");
+
+            BOOST_REQUIRE(SolveContextualTestPoW(
+                block, *parent, consensus));
+
+            block.fChecked = false;
+
+            BOOST_REQUIRE(mining->checkBlock(
+                block, {.check_pow = true}, reason, debug));
+
+            BOOST_REQUIRE(reason.empty());
+            BOOST_REQUIRE(debug.empty());
         }
     }
 
@@ -797,6 +917,7 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     // Therefore, load 110 blocks :)
     static_assert(std::size(BLOCKINFO) == 110, "Should have 110 blocks to import");
     int baseheight = 0;
+    bool randomx_interface_checked = false;
     std::vector<CTransactionRef> txFirst;
     for (const auto& bi : BLOCKINFO) {
         const int current_height{mining->getTip()->height};
@@ -827,8 +948,113 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             if (txFirst.size() < 4)
                 txFirst.push_back(block.vtx[0]);
             block.hashMerkleRoot = BlockMerkleRoot(block);
-            block.nNonce = bi.nonce;
+            block.nNonce = 0;
         }
+
+        const CBlockIndex* parent = nullptr;
+
+        {
+            LOCK(cs_main);
+            parent = Assert(m_node.chainman)
+                ->m_blockman.LookupBlockIndex(block.hashPrevBlock);
+        }
+
+        BOOST_REQUIRE(parent != nullptr);
+        BOOST_REQUIRE(SolveContextualTestPoW(
+            block,
+            *parent,
+            Assert(m_node.chainman)->GetConsensus()));
+
+        block.fChecked = false;
+
+        const auto& consensus =
+            Assert(m_node.chainman)->GetConsensus();
+
+        // Exercise the real mining interface at RandomX activation,
+        // using the existing chain and its authenticated ancestry.
+        if (current_height + 1 ==
+            consensus.randomx_activation_height) {
+
+            BOOST_REQUIRE_EQUAL(
+                consensus.randomx_activation_height, 2);
+
+            BOOST_REQUIRE(
+                taox::consensus::SelectPoWAlgorithm(
+                    current_height + 1, consensus) ==
+                taox::consensus::PoWAlgorithm::RandomX);
+
+            std::string reason;
+            std::string debug;
+
+            // A genuinely solved RandomX block must be accepted.
+            BOOST_REQUIRE(mining->checkBlock(
+                block, {.check_pow = true}, reason, debug));
+
+            BOOST_REQUIRE(reason.empty());
+            BOOST_REQUIRE(debug.empty());
+
+            // Construct a separate candidate with invalid RandomX
+            // proof of work, preserving the valid original block.
+            CBlock invalid_block{block};
+            invalid_block.fChecked = false;
+
+            bool invalid_pow_found = false;
+
+            {
+                LOCK(cs_main);
+
+                for (uint64_t attempt = 0;
+                     attempt < 1'000'000;
+                     ++attempt) {
+
+                    const auto pow_hash =
+                        taox::consensus::CalculateContextualPoWHash(
+                            invalid_block, parent, consensus);
+
+                    BOOST_REQUIRE(pow_hash.has_value());
+
+                    if (!CheckProofOfWorkImpl(
+                            *pow_hash,
+                            invalid_block.nBits,
+                            consensus)) {
+
+                        invalid_pow_found = true;
+                        break;
+                    }
+
+                    if (invalid_block.nNonce ==
+                        std::numeric_limits<uint32_t>::max()) {
+                        break;
+                    }
+
+                    ++invalid_block.nNonce;
+                }
+            }
+
+            BOOST_REQUIRE(invalid_pow_found);
+
+            BOOST_REQUIRE(
+                invalid_block.GetHash() != block.GetHash());
+
+            BOOST_REQUIRE(!mining->checkBlock(
+                invalid_block,
+                {.check_pow = true},
+                reason,
+                debug));
+
+            BOOST_REQUIRE_EQUAL(
+                reason, "high-hash-contextual");
+
+            BOOST_REQUIRE_EQUAL(
+                debug, "contextual proof of work failed");
+
+            randomx_interface_checked = true;
+
+            // Do not carry a cached validation result into
+            // normal block submission.
+            block.fChecked = false;
+        }
+
         std::shared_ptr<const CBlock> shared_pblock = std::make_shared<const CBlock>(block);
         // Alternate calls between Chainman's ProcessNewBlock and submitSolution
         // via the Mining interface. The former is used by net_processing as well
@@ -853,6 +1079,8 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
             mining->waitTipChanged(block.hashPrevBlock);
         }
     }
+
+    BOOST_REQUIRE(randomx_interface_checked);
 
     LOCK(cs_main);
 
