@@ -14,6 +14,7 @@
 #include <test/util/random.h>
 #include <test/util/script.h>
 #include <test/util/setup_common.h>
+#include <test/util/mining.h>
 #include <util/time.h>
 #include <validation.h>
 #include <validationinterface.h>
@@ -100,9 +101,14 @@ std::shared_ptr<CBlock> MinerTestingSetup::FinalizeBlock(std::shared_ptr<CBlock>
 
     pblock->hashMerkleRoot = BlockMerkleRoot(*pblock);
 
-    while (!CheckProofOfWork(pblock->GetHash(), pblock->nBits, Params().GetConsensus())) {
-        ++(pblock->nNonce);
-    }
+    BOOST_REQUIRE(prev_block != nullptr);
+
+    BOOST_REQUIRE(SolveContextualTestPoW(
+        *pblock,
+        *prev_block,
+        m_node.chainman->GetConsensus()));
+
+    pblock->fChecked = false;
 
     // submit block header, so that miner can get the block height from the
     // global state and the node has the topology of the chain

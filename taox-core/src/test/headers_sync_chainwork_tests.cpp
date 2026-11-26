@@ -8,11 +8,20 @@
 #include <headerssync.h>
 #include <net_processing.h>
 #include <pow.h>
+#include <tao/consensus/pow_algorithm.h>
+#include <tao/consensus/pow_seed_tracker.h>
+#include <tao/crypto/randomx.h>
 #include <test/util/common.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
+#include <optional>
+#include <span>
+#include <stdexcept>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
@@ -92,8 +101,6 @@ struct HeadersGeneratorSetup : public RegTestingSetup {
     }
 
 private:
-    /** Search for a nonce to meet (regtest) proof of work */
-    void FindProofOfWork(CBlockHeader& starting_header);
     /**
      * Generate headers in a chain that build off a given starting hash, using
      * the given nVersion, advancing time by 1 second from the starting
@@ -104,18 +111,25 @@ private:
             const uint256& merkle_root, uint32_t nBits);
 };
 
-void HeadersGeneratorSetup::FindProofOfWork(CBlockHeader& starting_header)
-{
-    while (!CheckProofOfWork(starting_header.GetHash(), starting_header.nBits, Params().GetConsensus())) {
-        ++starting_header.nNonce;
-    }
-}
-
 std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
         const size_t count, uint256 prev_hash, const int32_t nVersion,
         uint32_t prev_time, const uint256& merkle_root, const uint32_t nBits)
 {
+    const auto& consensus = Params().GetConsensus();
+
+    if (prev_hash != genesis.GetHash()) {
+        throw std::runtime_error(
+            "Denzuve header fixture requires genesis anchor");
+    }
+
+    taox::consensus::RandomXSeedTracker tracker;
+    tracker.SetVerifiedAnchor(0, prev_hash);
+
+    std::optional<uint256> active_seed;
+    std::unique_ptr<tao::experimental::RandomXLightHasher> hasher;
+
     std::vector<CBlockHeader> headers(count);
+
     for (auto& next_header : headers) {
         next_header.nVersion = nVersion;
         next_header.hashPrevBlock = prev_hash;
@@ -123,8 +137,82 @@ std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
         next_header.nTime = ++prev_time;
         next_header.nBits = nBits;
 
-        FindProofOfWork(next_header);
+        const auto context =
+            tracker.GetNextHeaderContext(next_header, consensus);
+
+        if (!context) {
+            throw std::runtime_error(
+                "Denzuve header fixture lacks contextual PoW");
+        }
+
+        if (context->algorithm ==
+            taox::consensus::PoWAlgorithm::RandomX) {
+
+            if (!context->seed) {
+                throw std::runtime_error(
+                    "Denzuve header fixture lacks RandomX seed");
+            }
+
+            if (!hasher || active_seed != context->seed) {
+                hasher.reset();
+
+                const auto& seed = *context->seed;
+
+                const std::span<const unsigned char> seed_bytes{
+                    seed.data(), seed.size()
+                };
+
+                hasher =
+                    std::make_unique<
+                        tao::experimental::RandomXLightHasher>(
+                            std::as_bytes(seed_bytes));
+
+                active_seed = context->seed;
+            }
+        } else {
+            hasher.reset();
+            active_seed.reset();
+        }
+
+        constexpr uint64_t MAX_ATTEMPTS{1'000'000};
+        bool solved = false;
+
+        for (uint64_t attempt = 0;
+             attempt < MAX_ATTEMPTS;
+             ++attempt) {
+
+            const uint256 pow_hash = hasher
+                ? hasher->HashHeader(next_header)
+                : next_header.GetPoWHash();
+
+            if (CheckProofOfWorkImpl(
+                    pow_hash, next_header.nBits, consensus)) {
+                solved = true;
+                break;
+            }
+
+            if (next_header.nNonce ==
+                std::numeric_limits<uint32_t>::max()) {
+                break;
+            }
+
+            ++next_header.nNonce;
+        }
+
+        if (!solved) {
+            throw std::runtime_error(
+                "Denzuve header fixture nonce search exhausted");
+        }
+
         prev_hash = next_header.GetHash();
+
+        if (!tracker.RecordVerifiedHeader(
+                tracker.VerifiedHeight() + 1,
+                prev_hash,
+                consensus)) {
+            throw std::runtime_error(
+                "Denzuve header fixture seed advancement failed");
+        }
     }
     return headers;
 }
