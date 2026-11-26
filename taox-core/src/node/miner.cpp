@@ -380,17 +380,26 @@ std::unique_ptr<CBlockTemplate> WaitAndCreateNewBlock(ChainstateManager& chainma
 
     // Alternate waiting for a new tip and checking if fees have risen.
     // The latter check is expensive so we only run it once per second.
-    auto now{NodeClock::now()};
-    const auto deadline = now + options.timeout;
+    const auto wait_start{std::chrono::steady_clock::now()};
     const MillisecondsDouble tick{1000};
+
+    const auto elapsed = [&] {
+        return MillisecondsDouble{
+            std::chrono::steady_clock::now() - wait_start};
+    };
     const bool allow_min_difficulty{chainman.GetParams().GetConsensus().fPowAllowMinDifficultyBlocks};
 
     do {
         bool tip_changed{false};
         {
             WAIT_LOCK(kernel_notifications.m_tip_block_mutex, lock);
-            // Note that wait_until() checks the predicate before waiting
-            kernel_notifications.m_tip_block_cv.wait_until(lock, std::min(now + tick, deadline), [&]() EXCLUSIVE_LOCKS_REQUIRED(kernel_notifications.m_tip_block_mutex) {
+            // Elapsed waiting time must not depend on mock blockchain time.
+            // A bounded relative wait also preserves the indefinite timeout.
+            const auto remaining = std::max(
+                MillisecondsDouble{0}, options.timeout - elapsed());
+            const auto wait_duration = std::min(tick, remaining);
+
+            kernel_notifications.m_tip_block_cv.wait_for(lock, wait_duration, [&]() EXCLUSIVE_LOCKS_REQUIRED(kernel_notifications.m_tip_block_mutex) {
                 AssertLockHeld(kernel_notifications.m_tip_block_mutex);
                 const auto tip_block{kernel_notifications.TipBlock()};
                 // We assume tip_block is set, because this is an instance
@@ -415,7 +424,7 @@ std::unique_ptr<CBlockTemplate> WaitAndCreateNewBlock(ChainstateManager& chainma
         // On test networks return a minimum difficulty block after 20 minutes
         if (!tip_changed && allow_min_difficulty) {
             const NodeClock::time_point tip_time{std::chrono::seconds{chainman.ActiveChain().Tip()->GetBlockTime()}};
-            if (now > tip_time + 20min) {
+            if (NodeClock::now() > tip_time + 20min) {
                 tip_changed = true;
             }
         }
@@ -449,8 +458,7 @@ std::unique_ptr<CBlockTemplate> WaitAndCreateNewBlock(ChainstateManager& chainma
             if (new_fees >= current_fees + options.fee_threshold) return new_tmpl;
         }
 
-        now = NodeClock::now();
-    } while (now < deadline);
+    } while (elapsed() < options.timeout);
 
     return nullptr;
 }

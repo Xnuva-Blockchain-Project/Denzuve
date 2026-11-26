@@ -15,6 +15,8 @@
 #include <test/util/setup_common.h>
 #include <validation.h>
 
+#include <chrono>
+#include <iostream>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -130,6 +132,17 @@ std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
 
     std::vector<CBlockHeader> headers(count);
 
+    const auto generation_start{
+        std::chrono::steady_clock::now()};
+    size_t generated{0};
+    uint64_t total_attempts{0};
+    size_t seed_initialisations{0};
+
+    std::cout << "DENZUVE_HEADERS_BEGIN"
+              << " count=" << count
+              << " merkle=" << merkle_root.GetHex()
+              << std::endl;
+
     for (auto& next_header : headers) {
         next_header.nVersion = nVersion;
         next_header.hashPrevBlock = prev_hash;
@@ -168,6 +181,7 @@ std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
                             std::as_bytes(seed_bytes));
 
                 active_seed = context->seed;
+                ++seed_initialisations;
             }
         } else {
             hasher.reset();
@@ -180,6 +194,8 @@ std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
         for (uint64_t attempt = 0;
              attempt < MAX_ATTEMPTS;
              ++attempt) {
+
+            ++total_attempts;
 
             const uint256 pow_hash = hasher
                 ? hasher->HashHeader(next_header)
@@ -213,7 +229,33 @@ std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
             throw std::runtime_error(
                 "Denzuve header fixture seed advancement failed");
         }
+
+        ++generated;
+
+        if (generated % 250 == 0 || generated == count) {
+            const auto elapsed{
+                std::chrono::duration<double>(
+                    std::chrono::steady_clock::now() -
+                    generation_start).count()};
+
+            std::cout << "DENZUVE_HEADERS_PROGRESS"
+                      << " generated=" << generated
+                      << " total=" << count
+                      << " attempts=" << total_attempts
+                      << " seed_initialisations="
+                      << seed_initialisations
+                      << " elapsed_seconds=" << elapsed
+                      << std::endl;
+        }
     }
+
+    std::cout << "DENZUVE_HEADERS_COMPLETE"
+              << " generated=" << generated
+              << " attempts=" << total_attempts
+              << " seed_initialisations="
+              << seed_initialisations
+              << std::endl;
+
     return headers;
 }
 
@@ -233,6 +275,9 @@ BOOST_AUTO_TEST_CASE(sneaky_redownload)
 {
     const auto& first_chain{FirstChain()};
     const auto& second_chain{SecondChain()};
+
+    std::cout << "DENZUVE_HEADERS_VALIDATION_BEGIN"
+              << std::endl;
 
     // Feed the first chain to HeadersSyncState, by delivering 1 header
     // initially and then the rest.

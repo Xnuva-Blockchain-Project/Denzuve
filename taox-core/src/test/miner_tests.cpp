@@ -31,6 +31,7 @@
 #include <test/util/setup_common.h>
 #include <test/util/mining.h>
 
+#include <chrono>
 #include <memory>
 #include <vector>
 
@@ -135,6 +136,22 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     auto should_be_nullptr = block_template->waitNext({.timeout = MillisecondsDouble{0}, .fee_threshold = 1});
     BOOST_REQUIRE(should_be_nullptr == nullptr);
 
+    // A positive timeout must expire even when blockchain
+    // mock time does not advance.
+    const auto frozen_node_time{NodeClock::now()};
+    const auto wait_start{std::chrono::steady_clock::now()};
+
+    auto timed_result = block_template->waitNext({
+        .timeout = MillisecondsDouble{100},
+        .fee_threshold = 1});
+
+    const auto wait_elapsed{
+        std::chrono::steady_clock::now() - wait_start};
+
+    BOOST_REQUIRE(timed_result == nullptr);
+    BOOST_CHECK(NodeClock::now() == frozen_node_time);
+    BOOST_CHECK(wait_elapsed >= std::chrono::milliseconds{100});
+
     // Unless fee_threshold is 0
     block_template = block_template->waitNext({.timeout = MillisecondsDouble{0}, .fee_threshold = 0});
     BOOST_REQUIRE(block_template);
@@ -229,7 +246,9 @@ void MinerTestingSetup::TestPackageSelection(const CScript& scriptPubKey, const 
     TryAddToMempool(tx_mempool, entry.Fee(feeToUse + 2).FromTx(tx));
 
     // waitNext() should return if fees for the new template are at least 1 sat up
-    block_template = block_template->waitNext({.fee_threshold = 1});
+    block_template = block_template->waitNext({
+        .timeout = MillisecondsDouble{30000},
+        .fee_threshold = 1});
     BOOST_REQUIRE(block_template);
     block = block_template->getBlock();
     BOOST_REQUIRE_EQUAL(block.vtx.size(), 6U);

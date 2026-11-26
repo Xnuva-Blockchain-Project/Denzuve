@@ -356,6 +356,30 @@ BOOST_FIXTURE_TEST_CASE(index_reorg_crash, BuildChainTestingSetup)
     int blocking_height = WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip()->nHeight);
 
     IndexReorgCrash index(interfaces::MakeChain(m_node), blocker, blocking_height);
+
+    struct IndexCleanup {
+        IndexReorgCrash& index;
+        std::promise<void>& promise;
+        bool released{false};
+
+        void Release()
+        {
+            if (!released) {
+                promise.set_value();
+                released = true;
+            }
+        }
+
+        ~IndexCleanup()
+        {
+            index.Interrupt();
+            Release();
+            index.Stop();
+        }
+    };
+
+    IndexCleanup cleanup{index, promise};
+
     BOOST_REQUIRE(index.Init());
     BOOST_REQUIRE(index.StartBackgroundSync());
 
@@ -370,8 +394,12 @@ BOOST_FIXTURE_TEST_CASE(index_reorg_crash, BuildChainTestingSetup)
         }
     };
 
-    // Wait until the index is one block before the fork point
-    func_wait_until(blocking_height - 1, /*timeout=*/5s);
+    // Native RandomX disk validation is substantially more expensive
+    // than the inherited SHA256d fixture. Retain a bounded deadline.
+    constexpr auto index_timeout = 120s;
+
+    // Wait until the index is one block before the fork point.
+    func_wait_until(blocking_height - 1, index_timeout);
 
     // Create a fork to trigger the reorg
     std::vector<std::shared_ptr<CBlock>> fork;
@@ -383,9 +411,10 @@ BOOST_FIXTURE_TEST_CASE(index_reorg_crash, BuildChainTestingSetup)
     }
 
     // Unblock the index thread so it can process the reorg
-    promise.set_value();
-    // Wait for the index to reach the new tip
-    func_wait_until(blocking_height + 2, 5s);
+    cleanup.Release();
+
+    // Wait for the index to reach the new tip.
+    func_wait_until(blocking_height + 2, index_timeout);
     index.Stop();
 }
 
