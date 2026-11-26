@@ -38,7 +38,7 @@ BOOST_FIXTURE_TEST_SUITE(validation_chainstatemanager_tests, TestingSetup)
 //! Basic tests for ChainstateManager.
 //!
 //! First create a legacy (IBD) chainstate, then create a snapshot chainstate.
-BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
+BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChainExtended100Setup)
 {
     ChainstateManager& manager = *m_node.chainman;
 
@@ -58,7 +58,12 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
     auto& active_chain = WITH_LOCK(manager.GetMutex(), return manager.ActiveChain());
     BOOST_CHECK_EQUAL(&active_chain, &c1.m_chain);
 
-    // Get to a valid assumeutxo tip (per chainparams);
+    // Preserve the inherited 100-block starting workload.
+    BOOST_REQUIRE_EQUAL(
+        WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()),
+        100);
+
+    // Extend the test chain to the intended snapshot test height.
     mineBlocks(10);
     BOOST_CHECK_EQUAL(WITH_LOCK(manager.GetMutex(), return manager.ActiveHeight()), 110);
     auto active_tip = WITH_LOCK(manager.GetMutex(), return manager.ActiveTip());
@@ -88,7 +93,11 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChain100Setup)
     BlockValidationState _;
     BOOST_CHECK(c2.ActivateBestChain(_, nullptr));
 
-    BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return *manager.CurrentChainstate().m_from_snapshot_blockhash), snapshot_blockhash);
+    BOOST_REQUIRE(WITH_LOCK(::cs_main, return
+        manager.CurrentChainstate().m_from_snapshot_blockhash.has_value()));
+    BOOST_CHECK_EQUAL(WITH_LOCK(::cs_main, return
+        *manager.CurrentChainstate().m_from_snapshot_blockhash),
+        snapshot_blockhash);
     BOOST_CHECK(WITH_LOCK(::cs_main, return manager.CurrentChainstate().m_assumeutxo == Assumeutxo::UNVALIDATED));
     BOOST_CHECK_EQUAL(&c2, &manager.ActiveChainstate());
     BOOST_CHECK(&c1 != &manager.ActiveChainstate());

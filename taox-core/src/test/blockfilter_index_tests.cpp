@@ -13,6 +13,7 @@
 #include <pow.h>
 #include <test/util/blockfilter.h>
 #include <test/util/common.h>
+#include <test/util/mining.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
 
@@ -89,7 +90,11 @@ CBlock BuildChainTestingSetup::CreateBlock(const CBlockIndex* prev,
         block.hashMerkleRoot = BlockMerkleRoot(block);
     }
 
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, m_node.chainman->GetConsensus())) ++block.nNonce;
+    // Solve against the actual fork parent and its seed ancestry.
+    BOOST_REQUIRE(prev != nullptr);
+    BOOST_REQUIRE(SolveContextualTestPoW(
+        block, *prev, m_node.chainman->GetConsensus()));
+    block.fChecked = false;
 
     return block;
 }
