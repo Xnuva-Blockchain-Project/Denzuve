@@ -9,6 +9,7 @@
 
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 namespace tao::experimental {
@@ -63,10 +64,39 @@ uint256 RandomXHashV2(std::span<const std::byte> input,
 uint256 RandomXHeaderHashV2(const CBlockHeader& header,
                            const uint256& seed_block_id)
 {
-    const std::span<const unsigned char> seed_bytes{
-        seed_block_id.data(), seed_block_id.size()
+    // Each calling thread owns its own VM and cache.
+    // Never share a mutable RandomX VM between threads.
+    struct SeedHasher {
+        std::optional<uint256> seed;
+        std::unique_ptr<RandomXLightHasher> hasher;
     };
-    return RandomXLightHasher{std::as_bytes(seed_bytes)}.HashHeader(header);
+
+    thread_local SeedHasher cached;
+
+    // Compare the complete seed identity, not only its
+    // height or a shortened representation.
+    if (!cached.hasher || !cached.seed ||
+        *cached.seed != seed_block_id) {
+
+        // Release the previous allocation before constructing
+        // another cache. Retain at most one hasher per thread.
+        cached.hasher.reset();
+        cached.seed.reset();
+
+        const std::span<const unsigned char> seed_bytes{
+            seed_block_id.data(), seed_block_id.size()
+        };
+
+        auto replacement = std::make_unique<RandomXLightHasher>(
+            std::as_bytes(seed_bytes));
+
+        cached.hasher = std::move(replacement);
+        cached.seed = seed_block_id;
+    }
+
+    // Only the engine allocation is reused.
+    // Every header is independently serialised and hashed.
+    return cached.hasher->HashHeader(header);
 }
 
 

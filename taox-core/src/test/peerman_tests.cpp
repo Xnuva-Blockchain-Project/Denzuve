@@ -54,8 +54,8 @@ static void mineBlock(const node::NodeContext& node, std::chrono::seconds block_
     {
         LOCK(cs_main);
         BOOST_REQUIRE_EQUAL(
-            node.chainman->ActiveChain().Tip()->GetBlockHash(),
-            block.GetHash());
+            node.chainman->ActiveChain().Tip()->GetBlockHash().GetHex(),
+            block.GetHash().GetHex());
     }
     node.validation_signals->SyncWithValidationInterfaceQueue(); // drain events queue
 }
