@@ -455,6 +455,42 @@ void TestCoinsResult(ListCoinsTest& context, OutputType out_type, CAmount amount
     LOCK(context.wallet->cs_wallet);
     util::Result<CTxDestination> dest = Assert(context.wallet->GetNewDestination(out_type, ""));
     CWalletTx& wtx = context.AddTx(CRecipient{*dest, amount, /*fSubtractFeeFromAmount=*/true});
+
+    // Previous self-transfer outputs are locked. Each transfer
+    // must consume one mature coinbase output.
+    BOOST_REQUIRE_EQUAL(wtx.tx->vin.size(), 1U);
+    BOOST_REQUIRE_EQUAL(wtx.tx->vout.size(), 2U);
+
+    const auto& prevout = wtx.tx->vin.at(0).prevout;
+    const auto& funding_tx = context.wallet->mapWallet.at(prevout.hash);
+    BOOST_REQUIRE(funding_tx.tx->IsCoinBase());
+
+    const CScript recipient_script = GetScriptForDestination(*dest);
+    size_t recipient_count{0};
+    size_t change_count{0};
+
+    for (const auto& output : wtx.tx->vout) {
+        if (output.scriptPubKey == recipient_script) {
+            ++recipient_count;
+        } else {
+            CTxDestination change_destination;
+            BOOST_REQUIRE(ExtractDestination(
+                output.scriptPubKey, change_destination));
+            BOOST_REQUIRE(std::holds_alternative<PKHash>(
+                change_destination));
+            ++change_count;
+        }
+    }
+
+    BOOST_REQUIRE_EQUAL(recipient_count, 1U);
+    BOOST_REQUIRE_EQUAL(change_count, 1U);
+
+    // Native default change is legacy. One additional coinbase
+    // matures as AddTx advances the chain by one block,
+    // replacing the coinbase consumed by this transfer.
+    ++expected_coins_sizes[out_type];
+    ++expected_coins_sizes[OutputType::LEGACY];
+
     CoinFilterParams filter;
     filter.skip_locked = false;
     CoinsResult available_coins = AvailableCoins(*context.wallet, nullptr, std::nullopt, filter);
@@ -478,13 +514,13 @@ BOOST_FIXTURE_TEST_CASE(BasicOutputTypesTest, ListCoinsTest)
     // We will create a self transfer for each of the OutputTypes and
     // verify it is put in the correct bucket after running GetAvailablecoins
     //
-    // For each OutputType, We expect 2 UTXOs in our wallet following the self transfer:
-    //   1. One UTXO as the recipient
-    //   2. One UTXO from the change, due to payment address matching logic
+    // Each transfer creates one recipient output of the requested
+    // type and one legacy change output under the native default.
+    // Earlier transfer outputs remain locked but are included
+    // in the accounting query.
 
     for (const auto& out_type : OUTPUT_TYPES) {
         if (out_type == OutputType::UNKNOWN) continue;
-        expected_coins_sizes[out_type] = 2U;
         TestCoinsResult(*this, out_type, 1 * COIN, expected_coins_sizes);
     }
 }

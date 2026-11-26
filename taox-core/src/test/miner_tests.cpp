@@ -1087,14 +1087,18 @@ BOOST_AUTO_TEST_CASE(CreateNewBlock_validity)
     TestBasicMining(scriptPubKey, txFirst, baseheight);
 
     m_node.chainman->ActiveChain().Tip()->nHeight--;
-    SetMockTime(0);
+    // Keep the fee-only template test within the native
+    // regtest minimum-difficulty refresh window.
+    SetMockTime(m_node.chainman->ActiveChain().Tip()->GetBlockTime() + 1);
 
     TestPackageSelection(scriptPubKey, txFirst);
 
     m_node.chainman->ActiveChain().Tip()->nHeight--;
-    SetMockTime(0);
+    SetMockTime(m_node.chainman->ActiveChain().Tip()->GetBlockTime() + 1);
 
     TestPrioritisedMining(scriptPubKey, txFirst);
+
+    SetMockTime(0);
 }
 
 BOOST_AUTO_TEST_SUITE_END()

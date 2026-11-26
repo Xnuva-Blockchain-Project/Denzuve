@@ -3,6 +3,7 @@
 // file COPYING or https://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
+#include <consensus/merkle.h>
 #include <node/miner.h>
 #include <net_processing.h>
 #include <pow.h>
@@ -24,6 +25,12 @@ static void mineBlock(const node::NodeContext& node, std::chrono::seconds block_
     options.include_dummy_extranonce = true;
     SetMockTime(block_time); // update time so the block is created with it
     CBlock block = node::BlockAssembler{node.chainman->ActiveChainstate(), nullptr, options}.CreateNewBlock()->block;
+    // Finalise the template before calculating proof of work.
+    block.hashMerkleRoot = BlockMerkleRoot(block);
+    block.m_checked_merkle_root = false;
+    block.m_checked_witness_commitment = false;
+    block.fChecked = false;
+
     const CBlockIndex* parent = nullptr;
 
     {
@@ -38,7 +45,18 @@ static void mineBlock(const node::NodeContext& node, std::chrono::seconds block_
 
     block.fChecked = false;
     SetMockTime(curr_time); // process block at current time
-    Assert(node.chainman->ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));
+    BOOST_REQUIRE(node.chainman->ProcessNewBlock(
+        std::make_shared<const CBlock>(block),
+        /*force_processing=*/true,
+        /*min_pow_checked=*/true,
+        nullptr));
+
+    {
+        LOCK(cs_main);
+        BOOST_REQUIRE_EQUAL(
+            node.chainman->ActiveChain().Tip()->GetBlockHash(),
+            block.GetHash());
+    }
     node.validation_signals->SyncWithValidationInterfaceQueue(); // drain events queue
 }
 
