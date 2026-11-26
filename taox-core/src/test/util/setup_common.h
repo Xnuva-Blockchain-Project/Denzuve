@@ -25,12 +25,14 @@
 #include <util/vector.h>
 
 #include <functional>
+#include <memory>
 #include <type_traits>
 #include <vector>
 
 class arith_uint256;
 class CFeeRate;
 class Chainstate;
+class CChainParams;
 class FastRandomContext;
 class uint160;
 class uint256;
@@ -56,6 +58,12 @@ struct TestOpts {
     bool setup_net{true};
     bool setup_validation_interface{true};
     bool min_validation_cache{false}; // Equivalent of -maxsigcachebytes=0
+
+    // Isolated native snapshot qualification only.
+    bool denzuve_snapshot_reference{false};
+
+    // Nonzero synthetic threshold for IBD boundary tests.
+    bool denzuve_ibd_work_fixture{false};
 };
 
 /** Basic testing setup.
@@ -107,6 +115,9 @@ struct ChainTestingSetup : public BasicTestingSetup {
     kernel::CacheSizes m_kernel_cache_sizes{node::CalculateCacheSizes(m_args).kernel};
     bool m_coins_db_in_memory{true};
     bool m_block_tree_db_in_memory{true};
+    std::unique_ptr<const CChainParams>
+        m_test_chainparams;
+
     std::function<void()> m_make_chainman{};
 
     explicit ChainTestingSetup(ChainType chainType = ChainType::MAIN, TestOpts = {});
@@ -250,7 +261,8 @@ struct TestChain100Setup : public TestingSetup {
  * coinbase maturity remain unchanged.
  */
 struct TestChainExtended100Setup : public TestChain100Setup {
-    TestChainExtended100Setup();
+    explicit TestChainExtended100Setup(
+        TestOpts opts = {});
 };
 
 

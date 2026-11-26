@@ -98,7 +98,20 @@ BOOST_FIXTURE_TEST_CASE(connect_tip_does_not_cache_inputs_on_failed_connect, Tes
 //!
 //! When run on the background chainstate, UpdateTip should do a subset
 //! of what it does for the active chainstate.
-BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
+
+struct DenzuveSnapshotNotificationSetup
+    : public TestChainExtended100Setup
+{
+    DenzuveSnapshotNotificationSetup()
+        : TestChainExtended100Setup{
+            TestOpts{
+                .denzuve_snapshot_reference = true,
+            }}
+    {
+    }
+};
+
+BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, DenzuveSnapshotNotificationSetup)
 {
     ChainstateManager& chainman = *Assert(m_node.chainman);
     const auto get_notify_tip{[&]() {
@@ -111,6 +124,20 @@ BOOST_FIXTURE_TEST_CASE(chainstate_update_tip, TestChain100Setup)
     // Mine 10 more blocks, putting at us height 110 where a valid assumeutxo value can
     // be found.
     mineBlocks(10);
+
+    BOOST_REQUIRE_EQUAL(
+        WITH_LOCK(cs_main, return chainman.ActiveHeight()),
+        110);
+
+    const auto reference =
+        chainman.GetParams().AssumeutxoForHeight(110);
+
+    BOOST_REQUIRE(reference.has_value());
+
+    BOOST_REQUIRE(
+        WITH_LOCK(cs_main,
+            return chainman.ActiveTip()->GetBlockHash()) ==
+        reference->blockhash);
 
     // After adding some blocks to the tip, best block should have changed.
     BOOST_CHECK(get_notify_tip() != curr_tip);

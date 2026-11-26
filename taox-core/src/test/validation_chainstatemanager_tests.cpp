@@ -38,7 +38,20 @@ BOOST_FIXTURE_TEST_SUITE(validation_chainstatemanager_tests, TestingSetup)
 //! Basic tests for ChainstateManager.
 //!
 //! First create a legacy (IBD) chainstate, then create a snapshot chainstate.
-BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChainExtended100Setup)
+
+struct DenzuveSnapshotManagerSetup
+    : public TestChainExtended100Setup
+{
+    DenzuveSnapshotManagerSetup()
+        : TestChainExtended100Setup{
+            TestOpts{
+                .denzuve_snapshot_reference = true,
+            }}
+    {
+    }
+};
+
+BOOST_FIXTURE_TEST_CASE(chainstatemanager, DenzuveSnapshotManagerSetup)
 {
     ChainstateManager& manager = *m_node.chainman;
 
@@ -126,9 +139,15 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager, TestChainExtended100Setup)
 }
 
 //! Test rebalancing the caches associated with each chainstate.
-BOOST_FIXTURE_TEST_CASE(chainstatemanager_rebalance_caches, TestChain100Setup)
+BOOST_FIXTURE_TEST_CASE(chainstatemanager_rebalance_caches, DenzuveSnapshotManagerSetup)
 {
     ChainstateManager& manager = *m_node.chainman;
+
+    mineBlocks(10);
+
+    BOOST_REQUIRE_EQUAL(
+        WITH_LOCK(cs_main, return manager.ActiveHeight()),
+        110);
 
     size_t max_cache = 10000;
     manager.m_total_coinsdb_cache = max_cache;
@@ -151,7 +170,20 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_rebalance_caches, TestChain100Setup)
 
     // Create a snapshot-based chainstate.
     //
-    CBlockIndex* snapshot_base{WITH_LOCK(manager.GetMutex(), return manager.ActiveChain()[manager.ActiveChain().Height() / 2])};
+    CBlockIndex* snapshot_base{
+        WITH_LOCK(manager.GetMutex(),
+            return manager.ActiveChain()[110])};
+
+    BOOST_REQUIRE(snapshot_base != nullptr);
+
+    const auto reference =
+        manager.GetParams().AssumeutxoForHeight(110);
+
+    BOOST_REQUIRE(reference.has_value());
+
+    BOOST_REQUIRE(
+        snapshot_base->GetBlockHash() ==
+        reference->blockhash);
     Chainstate& c2{WITH_LOCK(::cs_main, return manager.AddChainstate(std::make_unique<Chainstate>(nullptr, manager.m_blockman, manager, *snapshot_base->phashBlock)))};
     chainstates.push_back(&c2);
     c2.InitCoinsDB(
@@ -178,10 +210,26 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_rebalance_caches, TestChain100Setup)
     BOOST_CHECK_CLOSE(double(c2.m_coinsdb_cache_size_bytes), max_cache * 0.95, 1);
 }
 
-BOOST_FIXTURE_TEST_CASE(chainstatemanager_ibd_exit_after_loading_blocks, ChainTestingSetup)
+
+struct DenzuveIBDTestingSetup : public ChainTestingSetup
+{
+    DenzuveIBDTestingSetup()
+        : ChainTestingSetup{
+            ChainType::REGTEST,
+            TestOpts{
+                .denzuve_ibd_work_fixture = true,
+            }}
+    {
+    }
+};
+
+BOOST_FIXTURE_TEST_CASE(chainstatemanager_ibd_exit_after_loading_blocks, DenzuveIBDTestingSetup)
 {
     CBlockIndex tip;
     ChainstateManager& chainman{*Assert(m_node.chainman)};
+    BOOST_REQUIRE(
+        chainman.MinimumChainWork() == arith_uint256{100});
+
     auto apply{[&](bool cached_is_ibd, bool loading_blocks, bool tip_exists, bool enough_work, bool tip_recent) {
         LOCK(::cs_main);
         chainman.ResetChainstates();
@@ -216,20 +264,20 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_ibd_exit_after_loading_blocks, ChainTe
     }
 }
 
-struct SnapshotTestSetup : TestChain100Setup {
+struct SnapshotTestSetup : TestChainExtended100Setup {
     // Run with coinsdb on the filesystem to support, e.g., moving invalidated
     // chainstate dirs to "*_invalid".
     //
     // Note that this means the tests run considerably slower than in-memory DB
     // tests, but we can't otherwise test this functionality since it relies on
     // destructive filesystem operations.
-    SnapshotTestSetup() : TestChain100Setup{
-                              {},
-                              {
-                                  .coins_db_in_memory = false,
-                                  .block_tree_db_in_memory = false,
-                              },
-                          }
+    SnapshotTestSetup()
+        : TestChainExtended100Setup{
+            TestOpts{
+                .coins_db_in_memory = false,
+                .block_tree_db_in_memory = false,
+                .denzuve_snapshot_reference = true,
+            }}
     {
     }
 
@@ -275,6 +323,24 @@ struct SnapshotTestSetup : TestChain100Setup {
         mineBlocks(10);
         initial_size += 10;
         initial_total_coins += 10;
+
+        BOOST_REQUIRE_EQUAL(
+            WITH_LOCK(cs_main, return chainman.ActiveHeight()),
+            snapshot_height);
+
+        const auto native_reference =
+            chainman.GetParams().AssumeutxoForHeight(
+                snapshot_height);
+
+        BOOST_REQUIRE(native_reference.has_value());
+
+        BOOST_REQUIRE(
+            WITH_LOCK(cs_main,
+                return chainman.ActiveTip()->GetBlockHash()) ==
+            native_reference->blockhash);
+
+        BOOST_REQUIRE(
+            Params().GetAvailableSnapshotHeights().empty());
 
         // Should not load malleated snapshots
         BOOST_REQUIRE(!CreateAndActivateUTXOSnapshot(
@@ -434,8 +500,13 @@ struct SnapshotTestSetup : TestChain100Setup {
             chainman.ResetChainstates();
             BOOST_CHECK_EQUAL(chainman.m_chainstates.size(), 0);
             m_node.notifications = std::make_unique<KernelNotifications>(Assert(m_node.shutdown_request), m_node.exit_status, *Assert(m_node.warnings));
+            BOOST_REQUIRE(m_test_chainparams);
+            BOOST_REQUIRE(
+                &chainman.GetParams() ==
+                m_test_chainparams.get());
+
             const ChainstateManager::Options chainman_opts{
-                .chainparams = ::Params(),
+                .chainparams = *m_test_chainparams,
                 .datadir = chainman.m_options.datadir,
                 .notifications = *m_node.notifications,
                 .signals = m_node.validation_signals.get(),
@@ -455,6 +526,10 @@ struct SnapshotTestSetup : TestChain100Setup {
             m_node.chainman.reset();
             m_node.chainman = std::make_unique<ChainstateManager>(*Assert(m_node.shutdown_signal), chainman_opts, blockman_opts);
         }
+        BOOST_REQUIRE(
+            &Assert(m_node.chainman)->GetParams() ==
+            m_test_chainparams.get());
+
         return *Assert(m_node.chainman);
     }
 };
@@ -475,7 +550,7 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_activate_snapshot, SnapshotTestSetup)
 //!   chainstate only contains fully validated blocks and the other chainstate contains all blocks,
 //!   except those marked assume-valid, because those entries don't HAVE_DATA.
 //!
-BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
+BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, DenzuveSnapshotManagerSetup)
 {
     ChainstateManager& chainman = *Assert(m_node.chainman);
     Chainstate& cs1 = chainman.ActiveChainstate();
@@ -494,7 +569,8 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
     CBlockIndex* validated_tip{nullptr};
     CBlockIndex* assumed_base{nullptr};
     CBlockIndex* assumed_tip{WITH_LOCK(chainman.GetMutex(), return chainman.ActiveChain().Tip())};
-    BOOST_CHECK_EQUAL(assumed_tip->nHeight, 120);
+    BOOST_REQUIRE(assumed_tip != nullptr);
+    BOOST_REQUIRE_EQUAL(assumed_tip->nHeight, 120);
 
     auto reload_all_block_indexes = [&]() {
         LOCK(chainman.GetMutex());
@@ -540,6 +616,18 @@ BOOST_FIXTURE_TEST_CASE(chainstatemanager_loadblockindex, TestChain100Setup)
             assumed_base = index;
         }
     }
+
+    BOOST_REQUIRE(validated_tip != nullptr);
+    BOOST_REQUIRE(assumed_base != nullptr);
+
+    const auto reference =
+        chainman.GetParams().AssumeutxoForHeight(110);
+
+    BOOST_REQUIRE(reference.has_value());
+
+    BOOST_REQUIRE(
+        assumed_base->GetBlockHash() ==
+        reference->blockhash);
 
     // Note: cs2's tip is not set when ActivateExistingSnapshot is called.
     Chainstate& cs2{WITH_LOCK(::cs_main, return chainman.AddChainstate(std::make_unique<Chainstate>(nullptr, chainman.m_blockman, chainman, *assumed_base->phashBlock)))};

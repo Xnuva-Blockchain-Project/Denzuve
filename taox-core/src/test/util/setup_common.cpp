@@ -246,10 +246,51 @@ BasicTestingSetup::~BasicTestingSetup()
     gArgs.ForceSetArg("-datadir", fs::PathToString(m_path_root));
 }
 
+
+namespace {
+
+// This class is compiled as part of the test framework.
+// The reference was reproduced in two isolated native
+// executions during checkpoint K20C-B3-C3-B-R1.
+class DenzuveSnapshotTestParams final : public CChainParams
+{
+public:
+    explicit DenzuveSnapshotTestParams(
+        const CChainParams& native)
+        : CChainParams(native)
+    {
+        Assert(native.GetChainType() == ChainType::REGTEST);
+        Assert(native.GetAvailableSnapshotHeights().empty());
+
+        m_assumeutxo_data = {
+            {
+                .height = 110,
+                .hash_serialized = AssumeutxoHash{
+                    uint256{"b952555c8ab81fec46f3d4253b7af256d766ceb39fb7752b9d18cdf4a0141327"}},
+                .m_chain_tx_count = 111,
+                .blockhash = uint256{"5c97e9cb92ef0fecd33e7d61346af610af69437807f5e7bf0296287231c4e21b"},
+            },
+        };
+    }
+};
+
+} // namespace
+
 ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
     : BasicTestingSetup(chainType, opts)
 {
-    const CChainParams& chainparams = Params();
+    if (opts.denzuve_snapshot_reference) {
+        Assert(chainType == ChainType::REGTEST);
+
+        m_test_chainparams =
+            std::make_unique<DenzuveSnapshotTestParams>(
+                Params());
+    }
+
+    const CChainParams& chainparams =
+        m_test_chainparams
+            ? *m_test_chainparams
+            : Params();
 
     // A task runner is required to prevent ActivateBestChain
     // from blocking due to queue overrun.
@@ -276,10 +317,10 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
 
     m_node.notifications = std::make_unique<KernelNotifications>(Assert(m_node.shutdown_request), m_node.exit_status, *Assert(m_node.warnings));
 
-    m_make_chainman = [this, &chainparams, opts] {
+    m_make_chainman = [this, params = &chainparams, opts] {
         Assert(!m_node.chainman);
         ChainstateManager::Options chainman_opts{
-            .chainparams = chainparams,
+            .chainparams = *params,
             .datadir = m_args.GetDataDirNet(),
             .check_block_index = 1,
             .notifications = *m_node.notifications,
@@ -287,6 +328,11 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
             // Use no worker threads while fuzzing to avoid non-determinism
             .worker_threads_num = EnableFuzzDeterminism() ? 0 : 2,
         };
+        if (opts.denzuve_ibd_work_fixture) {
+            chainman_opts.minimum_chain_work =
+                arith_uint256{100};
+        }
+
         if (opts.min_validation_cache) {
             chainman_opts.script_execution_cache_bytes = 0;
             chainman_opts.signature_cache_bytes = 0;
@@ -414,8 +460,9 @@ TestChain100Setup::TestChain100Setup(
     }
 }
 
-TestChainExtended100Setup::TestChainExtended100Setup()
-    : TestChain100Setup{}
+TestChainExtended100Setup::TestChainExtended100Setup(
+    TestOpts opts)
+    : TestChain100Setup{ChainType::REGTEST, opts}
 {
     constexpr int extended_height{100};
 
