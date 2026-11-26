@@ -4,6 +4,14 @@
 
 #include <test/util/mining.h>
 
+#include <chain.h>
+#include <tao/consensus/pow_algorithm.h>
+#include <tao/crypto/randomx.h>
+
+#include <cstdint>
+#include <limits>
+#include <span>
+
 #include <chainparams.h>
 #include <consensus/merkle.h>
 #include <consensus/validation.h>
@@ -22,6 +30,87 @@
 
 using node::BlockAssembler;
 using node::NodeContext;
+
+bool SolveContextualTestPoW(
+    CBlockHeader& header,
+    const CBlockIndex& parent,
+    const Consensus::Params& consensus)
+{
+    std::optional<uint256> seed;
+
+    {
+        LOCK(cs_main);
+
+        if (!parent.phashBlock ||
+            parent.nHeight < 0 ||
+            parent.nHeight == std::numeric_limits<int>::max() ||
+            header.hashPrevBlock != parent.GetBlockHash() ||
+            !parent.IsValid(BLOCK_VALID_TREE)) {
+            return false;
+        }
+
+        const int height = parent.nHeight + 1;
+
+        const auto algorithm =
+            taox::consensus::SelectPoWAlgorithm(height, consensus);
+
+        if (!algorithm) return false;
+
+        if (*algorithm == taox::consensus::PoWAlgorithm::RandomX) {
+            const auto seed_height =
+                taox::consensus::RandomXSeedHeight(height, consensus);
+
+            if (!seed_height ||
+                *seed_height < 0 ||
+                *seed_height > parent.nHeight) {
+                return false;
+            }
+
+            const auto* ancestor =
+                parent.GetAncestor(static_cast<int>(*seed_height));
+
+            if (!ancestor ||
+                !ancestor->phashBlock ||
+                !ancestor->IsValid(BLOCK_VALID_TREE)) {
+                return false;
+            }
+
+            seed = ancestor->GetBlockHash();
+        }
+    }
+
+    std::unique_ptr<tao::experimental::RandomXLightHasher> hasher;
+
+    if (seed) {
+        const std::span<const unsigned char> seed_bytes{
+            seed->data(), seed->size()
+        };
+
+        hasher =
+            std::make_unique<tao::experimental::RandomXLightHasher>(
+                std::as_bytes(seed_bytes));
+    }
+
+    constexpr uint64_t MAX_ATTEMPTS{1'000'000};
+
+    for (uint64_t attempt = 0; attempt < MAX_ATTEMPTS; ++attempt) {
+        const uint256 hash = hasher
+            ? hasher->HashHeader(header)
+            : header.GetPoWHash();
+
+        if (CheckProofOfWorkImpl(hash, header.nBits, consensus)) {
+            return true;
+        }
+
+        if (header.nNonce == std::numeric_limits<uint32_t>::max()) {
+            return false;
+        }
+
+        ++header.nNonce;
+    }
+
+    return false;
+}
 
 COutPoint generatetoaddress(const NodeContext& node, const std::string& address)
 {
@@ -95,9 +184,29 @@ protected:
 
 COutPoint MineBlock(const NodeContext& node, std::shared_ptr<CBlock>& block)
 {
-    while (!CheckProofOfWork(block->GetHash(), block->nBits, Params().GetConsensus())) {
-        ++block->nNonce;
-        assert(block->nNonce);
+    if (EnableFuzzDeterminism()) {
+        while (!CheckProofOfWork(
+            block->GetHash(), block->nBits, Params().GetConsensus())) {
+            ++block->nNonce;
+            assert(block->nNonce);
+        }
+    } else {
+        auto& chainman = *Assert(node.chainman);
+        const CBlockIndex* parent = nullptr;
+
+        {
+            LOCK(cs_main);
+            parent = chainman.m_blockman.LookupBlockIndex(
+                block->hashPrevBlock);
+        }
+
+        if (!parent ||
+            !SolveContextualTestPoW(
+                *block, *parent, chainman.GetConsensus())) {
+            return {};
+        }
+
+        block->fChecked = false;
     }
 
     return ProcessBlock(node, block);

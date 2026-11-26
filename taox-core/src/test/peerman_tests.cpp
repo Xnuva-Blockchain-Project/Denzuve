@@ -7,6 +7,7 @@
 #include <net_processing.h>
 #include <pow.h>
 #include <test/util/setup_common.h>
+#include <test/util/mining.h>
 #include <validation.h>
 
 #include <boost/test/unit_test.hpp>
@@ -23,8 +24,19 @@ static void mineBlock(const node::NodeContext& node, std::chrono::seconds block_
     options.include_dummy_extranonce = true;
     SetMockTime(block_time); // update time so the block is created with it
     CBlock block = node::BlockAssembler{node.chainman->ActiveChainstate(), nullptr, options}.CreateNewBlock()->block;
-    while (!CheckProofOfWork(block.GetHash(), block.nBits, node.chainman->GetConsensus())) ++block.nNonce;
-    block.fChecked = true; // little speedup
+    const CBlockIndex* parent = nullptr;
+
+    {
+        LOCK(cs_main);
+        parent = node.chainman->m_blockman.LookupBlockIndex(
+            block.hashPrevBlock);
+    }
+
+    BOOST_REQUIRE(parent != nullptr);
+    BOOST_REQUIRE(SolveContextualTestPoW(
+        block, *parent, node.chainman->GetConsensus()));
+
+    block.fChecked = false;
     SetMockTime(curr_time); // process block at current time
     Assert(node.chainman->ProcessNewBlock(std::make_shared<const CBlock>(block), /*force_processing=*/true, /*min_pow_checked=*/true, nullptr));
     node.validation_signals->SyncWithValidationInterfaceQueue(); // drain events queue

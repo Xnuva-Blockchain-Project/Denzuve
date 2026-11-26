@@ -12,12 +12,28 @@
 #include <vector>
 
 class CBlock;
+class CBlockHeader;
+class CBlockIndex;
+
+namespace Consensus {
+struct Params;
+}
 class CChainParams;
 class COutPoint;
 class CScript;
 namespace node {
 struct NodeContext;
 } // namespace node
+
+/**
+ * Solve test proof of work using the candidate parent's
+ * native consensus context. Does not submit or accept blocks.
+ * Returns false if context or nonce search is invalid.
+ */
+bool SolveContextualTestPoW(
+    CBlockHeader& header,
+    const CBlockIndex& parent,
+    const Consensus::Params& consensus);
 
 /** Create a blockchain, starting from genesis */
 std::vector<std::shared_ptr<CBlock>> CreateBlockChain(size_t total_height, const CChainParams& params);
