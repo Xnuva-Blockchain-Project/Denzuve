@@ -400,7 +400,10 @@ struct SnapshotTestSetup : TestChainExtended100Setup {
                 *Assert(chainman.CurrentChainstate().m_from_snapshot_blockhash));
         }
 
-        const auto& au_data = ::Params().AssumeutxoForHeight(snapshot_height);
+        const auto au_data =
+            chainman.GetParams().AssumeutxoForHeight(snapshot_height);
+
+        BOOST_REQUIRE(au_data.has_value());
         const CBlockIndex* tip = WITH_LOCK(chainman.GetMutex(), return chainman.ActiveTip());
 
         BOOST_CHECK_EQUAL(tip->m_chain_tx_count, au_data->m_chain_tx_count);

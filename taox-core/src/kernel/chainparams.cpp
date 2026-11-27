@@ -272,7 +272,14 @@ std::unique_ptr<const CChainParams> CChainParams::RegTest(const RegTestOptions&)
 
 std::vector<int> CChainParams::GetAvailableSnapshotHeights() const
 {
-    return {};
+    std::vector<int> heights;
+    heights.reserve(m_assumeutxo_data.size());
+
+    for (const auto& entry : m_assumeutxo_data) {
+        heights.push_back(entry.height);
+    }
+
+    return heights;
 }
 
 std::optional<ChainType> GetNetworkForMagic(const MessageStartChars& message)

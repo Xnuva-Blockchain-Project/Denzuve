@@ -16,6 +16,9 @@
 #include <validation.h>
 
 #include <chrono>
+#include <future>
+#include <syncstream>
+#include <utility>
 #include <iostream>
 #include <cstddef>
 #include <cstdint>
@@ -66,28 +69,53 @@ struct HeadersGeneratorSetup : public RegTestingSetup {
     const CBlock& genesis{Params().GenesisBlock()};
     CBlockIndex& chain_start{WITH_LOCK(::cs_main, return *Assert(m_node.chainman->m_blockman.LookupBlockIndex(genesis.GetHash())))};
 
-    // Generate headers for two different chains (using differing merkle roots
-    // to ensure the headers are different).
-    const std::vector<CBlockHeader>& FirstChain()
+    // Generate both independent chains concurrently.
+    // Each generation owns its seed tracker and RandomX hasher.
+    // Join before returning either chain to the test framework.
+    using HeaderChains = std::pair<
+        std::vector<CBlockHeader>,
+        std::vector<CBlockHeader>>;
+
+    const HeaderChains& GeneratedChains()
     {
-        // Block header hash target is half of max uint256 (2**256 / 2), expressible
-        // roughly as the coefficient 0x7fffff with the exponent 0x20 (32 bytes).
-        // This implies around every 2nd hash attempt should succeed, which
-        // is why CHAIN_WORK == TARGET_BLOCKS * 2.
         assert(genesis.nBits == 0x207fffff);
 
-        // Subtract 1 since the genesis block also contributes work so we reach
-        // the CHAIN_WORK target.
-        static const auto first_chain{GenerateHeaders(/*count=*/TARGET_BLOCKS - 1, genesis.GetHash(),
-                genesis.nVersion, genesis.nTime, /*merkle_root=*/uint256::ZERO, genesis.nBits)};
-        return first_chain;
+        static const HeaderChains chains = [this] {
+            auto first_future = std::async(
+                std::launch::async, [this] {
+                    return GenerateHeaders(
+                        TARGET_BLOCKS - 1,
+                        genesis.GetHash(),
+                        genesis.nVersion,
+                        genesis.nTime,
+                        uint256::ZERO,
+                        genesis.nBits);
+                });
+
+            auto second = GenerateHeaders(
+                TARGET_BLOCKS - 2,
+                genesis.GetHash(),
+                genesis.nVersion,
+                genesis.nTime,
+                uint256::ONE,
+                genesis.nBits);
+
+            return HeaderChains{
+                first_future.get(),
+                std::move(second)};
+        }();
+
+        return chains;
     }
+
+    const std::vector<CBlockHeader>& FirstChain()
+    {
+        return GeneratedChains().first;
+    }
+
     const std::vector<CBlockHeader>& SecondChain()
     {
-        // Subtract 2 to keep total work below the target.
-        static const auto second_chain{GenerateHeaders(/*count=*/TARGET_BLOCKS - 2, genesis.GetHash(),
-                genesis.nVersion, genesis.nTime, /*merkle_root=*/uint256::ONE, genesis.nBits)};
-        return second_chain;
+        return GeneratedChains().second;
     }
 
     HeadersSyncState CreateState()
@@ -138,7 +166,7 @@ std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
     uint64_t total_attempts{0};
     size_t seed_initialisations{0};
 
-    std::cout << "DENZUVE_HEADERS_BEGIN"
+    std::osyncstream(std::cout) << "DENZUVE_HEADERS_BEGIN"
               << " count=" << count
               << " merkle=" << merkle_root.GetHex()
               << std::endl;
@@ -238,7 +266,8 @@ std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
                     std::chrono::steady_clock::now() -
                     generation_start).count()};
 
-            std::cout << "DENZUVE_HEADERS_PROGRESS"
+            std::osyncstream(std::cout) << "DENZUVE_HEADERS_PROGRESS"
+                      << " merkle=" << merkle_root.GetHex()
                       << " generated=" << generated
                       << " total=" << count
                       << " attempts=" << total_attempts
@@ -249,7 +278,8 @@ std::vector<CBlockHeader> HeadersGeneratorSetup::GenerateHeaders(
         }
     }
 
-    std::cout << "DENZUVE_HEADERS_COMPLETE"
+    std::osyncstream(std::cout) << "DENZUVE_HEADERS_COMPLETE"
+              << " merkle=" << merkle_root.GetHex()
               << " generated=" << generated
               << " attempts=" << total_attempts
               << " seed_initialisations="
